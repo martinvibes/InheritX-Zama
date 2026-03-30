@@ -1,0 +1,69 @@
+import { useState } from 'react'
+import { HeartPulse, Check, Shield } from 'lucide-react'
+
+interface CheckInAlertProps {
+  daysLeft: number
+}
+
+export default function CheckInAlert({ daysLeft }: CheckInAlertProps) {
+  const [days, setDays] = useState(daysLeft)
+  const [checkedIn, setCheckedIn] = useState(false)
+
+  const handleCheckIn = () => {
+    setDays(180)
+    setCheckedIn(true)
+    setTimeout(() => setCheckedIn(false), 2000)
+  }
+
+  const pct = Math.round((days / 180) * 100)
+
+  return (
+    <div className="heartbeat-card">
+      <div className="hb-left">
+        <div className="hb-header">
+          <div className="hb-pulse-dot" />
+          <span className="hb-title">Proof of Life</span>
+          <span className={`hb-status ${days > 30 ? 'hb-safe' : 'hb-warn'}`}>
+            {days > 30 ? 'Safe' : 'Action Needed'}
+          </span>
+        </div>
+
+        <div className="hb-ecg-wrap">
+          <svg className="hb-ecg" viewBox="0 0 300 60" preserveAspectRatio="none">
+            <polyline
+              className="ecg-line"
+              fill="none"
+              stroke="var(--green)"
+              strokeWidth="1.5"
+              points="0,30 30,30 40,30 50,10 55,50 60,20 65,35 70,30 100,30 130,30 140,30 150,10 155,50 160,20 165,35 170,30 200,30 230,30 240,30 250,10 255,50 260,20 265,35 270,30 300,30"
+            />
+          </svg>
+        </div>
+
+        <div className="hb-meta">
+          <div className="hb-days">
+            <span className="hb-days-num">{days}</span>
+            <span className="hb-days-label">days remaining</span>
+          </div>
+          <div className="hb-progress-wrap">
+            <div className="hb-progress-bar">
+              <div className="hb-progress-fill" style={{ width: `${pct}%` }} />
+            </div>
+            <span className="hb-progress-pct">{pct}%</span>
+          </div>
+        </div>
+      </div>
+
+      <div className="hb-right">
+        <button className={`btn-checkin ${checkedIn ? 'checked' : ''}`} onClick={handleCheckIn}>
+          {checkedIn ? (
+            <><Check size={16} strokeWidth={2.5} /> Confirmed</>
+          ) : (
+            <><HeartPulse size={16} strokeWidth={2} /> I'm Alive</>
+          )}
+        </button>
+        <div className="hb-hint">Resets your inactivity timer</div>
+      </div>
+    </div>
+  )
+}
