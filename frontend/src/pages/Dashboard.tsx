@@ -1,5 +1,7 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { FileText, Users, Wallet, Zap, Plus, Sparkles } from 'lucide-react'
+import { useAccount } from 'wagmi'
+import { formatEther } from 'viem'
 import DashboardLayout from '../components/Layout/DashboardLayout'
 import StatCard from '../components/Dashboard/StatCard'
 import KYCBanner from '../components/Dashboard/KYCBanner'
@@ -8,24 +10,52 @@ import RecentPlans from '../components/Dashboard/RecentPlans'
 import QuickActions from '../components/Dashboard/QuickActions'
 import FHEBadge from '../components/shared/FHEBadge'
 import CreatePlanModal from '../components/Dashboard/CreatePlanModal'
+import KYCVerification from './KYCVerification'
+import CreatePlan from './CreatePlan'
+import MyPlans from './MyPlans'
+import ClaimInheritance from './ClaimInheritance'
+import ActivityPage from './ActivityPage'
+import SecurityPage from './SecurityPage'
+import { useKYC } from '../hooks/useKYC'
+import { useOwnerPlans } from '../hooks/usePlans'
+import { CONTRACT_ADDRESS } from '../lib/constants'
 
 export default function Dashboard() {
+  const { address, isConnected } = useAccount()
   const [activePage, setActivePage] = useState('overview')
-  const [kycStatus, setKycStatus] = useState<'NOT_SUBMITTED' | 'SUBMITTED' | 'VERIFIED'>('NOT_SUBMITTED')
   const [modalOpen, setModalOpen] = useState(false)
-  const [planCount, setPlanCount] = useState(0)
-  const [hasPlans, setHasPlans] = useState(false)
+
+  // On-chain data (when contract is deployed)
+  const kyc = useKYC(address)
+  const { planIds, refetch: refetchPlans } = useOwnerPlans(address)
+
+  // Fallback to local state when contract isn't deployed yet
+  const [localKycStatus, setLocalKycStatus] = useState<'NOT_SUBMITTED' | 'SUBMITTED' | 'VERIFIED'>('NOT_SUBMITTED')
+  const [localPlanCount, setLocalPlanCount] = useState(0)
+  const [localHasPlans, setLocalHasPlans] = useState(false)
+
+  const isContractLive = !!CONTRACT_ADDRESS
+  const kycStatus = isContractLive ? kyc.status : localKycStatus
+  const planCount = isContractLive ? (planIds?.length || 0) : localPlanCount
+  const hasPlans = isContractLive ? planCount > 0 : localHasPlans
 
   const handleConfirmPlan = () => {
     setModalOpen(false)
-    const newCount = planCount + 1
-    setPlanCount(newCount)
-    setHasPlans(true)
+    if (isContractLive) {
+      refetchPlans()
+    } else {
+      setLocalPlanCount(prev => prev + 1)
+      setLocalHasPlans(true)
+    }
   }
 
   const handleCompleteKYC = () => {
-    setKycStatus('SUBMITTED')
-    setTimeout(() => setKycStatus('VERIFIED'), 2000)
+    if (isContractLive) {
+      kyc.submitKYC()
+    } else {
+      setLocalKycStatus('SUBMITTED')
+      setTimeout(() => setLocalKycStatus('VERIFIED'), 2000)
+    }
   }
 
   return (
@@ -34,42 +64,53 @@ export default function Dashboard() {
       <DashboardLayout activePage={activePage} onNavigate={setActivePage} kycStatus={kycStatus}>
         <CreatePlanModal open={modalOpen} onClose={() => setModalOpen(false)} onConfirm={handleConfirmPlan} />
 
-        {/* Welcome hero */}
-        <div className="welcome-hero">
-          <div className="wh-content">
-            <div className="wh-greeting">
-              <Sparkles size={14} strokeWidth={2} style={{ color: 'var(--cyan)' }} />
-              <span>Welcome back</span>
+        {activePage === 'overview' && (
+          <>
+            {/* Welcome hero */}
+            <div className="welcome-hero">
+              <div className="wh-content">
+                <div className="wh-greeting">
+                  <Sparkles size={14} strokeWidth={2} style={{ color: 'var(--cyan)' }} />
+                  <span>Welcome back</span>
+                </div>
+                <h1 className="wh-title">Your Legacy Dashboard</h1>
+                <p className="wh-sub">Monitor your inheritance plans, manage beneficiaries, and keep your digital assets secure.</p>
+              </div>
+              <button className="btn-create" onClick={() => setModalOpen(true)}>
+                <Plus size={15} strokeWidth={2.5} /> Create Plan
+              </button>
             </div>
-            <h1 className="wh-title">Your Legacy Dashboard</h1>
-            <p className="wh-sub">Monitor your inheritance plans, manage beneficiaries, and keep your digital assets secure.</p>
-          </div>
-          <button className="btn-create" onClick={() => setModalOpen(true)}>
-            <Plus size={15} strokeWidth={2.5} /> Create Plan
-          </button>
-        </div>
 
-        {/* KYC Banner */}
-        {kycStatus !== 'VERIFIED' && <KYCBanner onComplete={handleCompleteKYC} />}
+            {/* KYC Banner */}
+            {kycStatus !== 'VERIFIED' && <KYCBanner onComplete={handleCompleteKYC} />}
 
-        {/* Stat cards */}
-        <div className="stat-grid">
-          <StatCard icon={FileText} iconClass="ic-blue" value={String(planCount)} label="Total Plans" trend={planCount > 0 ? '+1' : undefined} />
-          <StatCard icon={Users} iconClass="ic-purple" value={String(planCount * 2)} label="Beneficiaries" />
-          <StatCard icon={Wallet} iconClass="ic-green" value={planCount > 0 ? `$${(planCount * 3200).toLocaleString()}` : '$0'} label="Assets Locked" trend={planCount > 0 ? '+$3.2k' : undefined} />
-          <StatCard icon={Zap} iconClass="ic-cyan" value={String(planCount)} label="Active Plans" />
-        </div>
+            {/* Stat cards */}
+            <div className="stat-grid">
+              <StatCard icon={FileText} iconClass="ic-blue" value={String(planCount)} label="Total Plans" trend={planCount > 0 ? '+1' : undefined} />
+              <StatCard icon={Users} iconClass="ic-purple" value={String(planCount * 2)} label="Beneficiaries" />
+              <StatCard icon={Wallet} iconClass="ic-green" value={planCount > 0 ? `$${(planCount * 3200).toLocaleString()}` : '$0'} label="Assets Locked" trend={planCount > 0 ? '+$3.2k' : undefined} />
+              <StatCard icon={Zap} iconClass="ic-cyan" value={String(planCount)} label="Active Plans" />
+            </div>
 
-        {/* Check-in (shown when plans exist) */}
-        {hasPlans && <CheckInAlert daysLeft={26} />}
+            {/* Check-in (shown when plans exist) */}
+            {hasPlans && <CheckInAlert daysLeft={26} />}
 
-        {/* Bento grid */}
-        <div className="bento-grid">
-          <RecentPlans hasPlans={hasPlans} onCreatePlan={() => setModalOpen(true)} />
-          <QuickActions onCreatePlan={() => setModalOpen(true)} planCount={planCount} kycStatus={kycStatus} />
-        </div>
+            {/* Bento grid */}
+            <div className="bento-grid">
+              <RecentPlans hasPlans={hasPlans} onCreatePlan={() => setModalOpen(true)} />
+              <QuickActions onCreatePlan={() => setModalOpen(true)} planCount={planCount} kycStatus={kycStatus} />
+            </div>
 
-        <FHEBadge />
+            <FHEBadge />
+          </>
+        )}
+
+        {activePage === 'plans' && <MyPlans onCreatePlan={() => setModalOpen(true)} onNavigate={setActivePage} />}
+        {activePage === 'kyc' && <KYCVerification />}
+        {activePage === 'activity' && <ActivityPage />}
+        {activePage === 'security' && <SecurityPage />}
+        {activePage === 'claim' && <ClaimInheritance />}
+        {activePage === 'create' && <CreatePlan />}
       </DashboardLayout>
     </>
   )
@@ -187,6 +228,20 @@ body::before { display: none; }
   border: 1.5px solid var(--bg2);
 }
 
+.tb-connect-btn {
+  padding: 7px 16px;
+  background: var(--cyan);
+  border: none; border-radius: 8px;
+  color: #000;
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 12px; font-weight: 700;
+  cursor: pointer; transition: all 0.2s;
+}
+.tb-connect-btn:hover {
+  background: var(--cyan-hi);
+  box-shadow: 0 0 20px rgba(0,212,232,0.3);
+  transform: translateY(-1px);
+}
 .tb-wallet {
   display: flex; align-items: center; gap: 8px;
   padding: 5px 10px 5px 6px;

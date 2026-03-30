@@ -1,6 +1,8 @@
 import { useEffect, useRef } from 'react'
 import { motion, useInView } from 'framer-motion'
 import { useNavigate } from 'react-router-dom'
+import { useAccount } from 'wagmi'
+import { useConnectModal } from '@rainbow-me/rainbowkit'
 import { LogoMark } from '../components/shared/Logo'
 import {
   Shield, Lock, Users, Zap, Box, Link2,
@@ -45,7 +47,17 @@ const securityItems = [
 
 export default function Landing() {
   const navigate = useNavigate()
+  const { isConnected } = useAccount()
+  const { openConnectModal } = useConnectModal()
   const navRef = useRef<HTMLElement>(null)
+
+  const handleLaunchApp = () => {
+    if (isConnected) {
+      navigate('/dashboard')
+    } else {
+      openConnectModal?.()
+    }
+  }
 
   useEffect(() => {
     const handleScroll = () => {
@@ -72,7 +84,7 @@ export default function Landing() {
             <a className="nav-link" href="#how">How It Works</a>
             <a className="nav-link" href="#security">Security</a>
           </div>
-          <button className="nav-btn" onClick={() => navigate('/dashboard')}>
+          <button className="nav-btn" onClick={handleLaunchApp}>
             Dashboard <ArrowRight size={13} strokeWidth={2.5} />
           </button>
         </nav>
@@ -104,7 +116,7 @@ export default function Landing() {
           </motion.p>
 
           <motion.div className="hero-ctas" initial="hidden" animate="visible" variants={fadeUp(0.3)}>
-            <button className="btn-primary" onClick={() => navigate('/dashboard')}>
+            <button className="btn-primary" onClick={handleLaunchApp}>
               Open Dashboard <ArrowUpRight size={14} strokeWidth={2.5} />
             </button>
             <a className="btn-secondary" href="#how">Learn More</a>
@@ -202,7 +214,7 @@ export default function Landing() {
                 ))}
               </div>
 
-              <button className="btn-primary" onClick={() => navigate('/dashboard')}>
+              <button className="btn-primary" onClick={handleLaunchApp}>
                 Start protecting your legacy <ArrowRight size={14} strokeWidth={2} />
               </button>
             </div>
@@ -290,7 +302,7 @@ export default function Landing() {
             <h2 className="cta-title">Ready to secure<br />your legacy?</h2>
             <p className="cta-sub">Join thousands who trust InheritX for their digital future planning. Set up in minutes. Protected forever.</p>
             <div className="cta-btns">
-              <button className="btn-primary btn-lg" onClick={() => navigate('/dashboard')}>Go to Dashboard <ArrowUpRight size={15} strokeWidth={2} /></button>
+              <button className="btn-primary btn-lg" onClick={handleLaunchApp}>Go to Dashboard <ArrowUpRight size={15} strokeWidth={2} /></button>
               <a className="btn-secondary" href="#">Read the Docs</a>
             </div>
           </div>

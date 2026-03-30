@@ -1,5 +1,6 @@
 import { Bell } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
+import { ConnectButton } from '@rainbow-me/rainbowkit'
 import { LogoMark } from '../shared/Logo'
 
 export default function Topbar() {
@@ -28,13 +29,33 @@ export default function Topbar() {
           <div className="bell-dot" />
         </div>
 
-        <div className="tb-wallet">
-          <div className="wallet-avatar" />
-          <div className="wallet-info">
-            <div className="wallet-addr">0xBE36…69d6</div>
-            <div className="wallet-bal">0.00 ETH</div>
-          </div>
-        </div>
+        <ConnectButton.Custom>
+          {({ account, chain, openAccountModal, openChainModal, openConnectModal, mounted }) => {
+            const connected = mounted && account && chain
+            return (
+              <div
+                {...(!mounted && {
+                  'aria-hidden': true,
+                  style: { opacity: 0, pointerEvents: 'none', userSelect: 'none' },
+                })}
+              >
+                {!connected ? (
+                  <button className="tb-connect-btn" onClick={openConnectModal}>
+                    Connect Wallet
+                  </button>
+                ) : (
+                  <div className="tb-wallet" onClick={openAccountModal}>
+                    <div className="wallet-avatar" />
+                    <div className="wallet-info">
+                      <div className="wallet-addr">{account.displayName}</div>
+                      <div className="wallet-bal">{account.displayBalance || '0 ETH'}</div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )
+          }}
+        </ConnectButton.Custom>
       </div>
     </div>
   )
