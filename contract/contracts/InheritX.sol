@@ -172,6 +172,8 @@ contract InheritX is ZamaEthereumConfig, Ownable {
      */
     function createPlan(
         PlanType planType,
+        string calldata planName,
+        string calldata planDescription,
         externalEaddress[] calldata encHeirAddrs,
         externalEuint32[]  calldata encShares,
         bytes[]  calldata inputProofsAddrs,
@@ -195,6 +197,8 @@ contract InheritX is ZamaEthereumConfig, Ownable {
         Plan storage p = plans[planId];
         p.owner = msg.sender;
         p.planType = planType;
+        p.name = planName;
+        p.description = planDescription;
         p.lastCheckin = block.timestamp;
         p.inactivityDays = inactivityDays;
         p.unlockDate = unlockDate;
@@ -473,6 +477,14 @@ contract InheritX is ZamaEthereumConfig, Ownable {
     function getPlanBalance(uint256 planId) external view returns (uint256) {
         require(balanceViewers[planId][msg.sender], "Not authorized to view balance");
         return planEthBalance[planId];
+    }
+
+    /**
+     * @notice Get the raw FHE handle for the encrypted ETH amount.
+     *         Needed for client-side decryption via the relayer SDK.
+     */
+    function getEthLockedHandle(uint256 planId) external view returns (bytes32) {
+        return euint128.unwrap(plans[planId].ethLocked);
     }
 
     /**

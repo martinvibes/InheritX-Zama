@@ -99,6 +99,12 @@ export const INHERITX_ABI = [
   },
   {
     inputs: [{ name: 'planId', type: 'uint256' }],
+    name: 'getEthLockedHandle',
+    outputs: [{ name: '', type: 'bytes32' }],
+    stateMutability: 'view', type: 'function',
+  },
+  {
+    inputs: [{ name: 'planId', type: 'uint256' }],
     name: 'getPlanBalance',
     outputs: [{ name: '', type: 'uint256' }],
     stateMutability: 'view', type: 'function',
@@ -137,6 +143,8 @@ export const INHERITX_ABI = [
   {
     inputs: [
       { name: 'planType', type: 'uint8' },
+      { name: 'planName', type: 'string' },
+      { name: 'planDescription', type: 'string' },
       { name: 'encHeirAddrs', type: 'bytes32[]' },
       { name: 'encShares', type: 'bytes32[]' },
       { name: 'inputProofsAddrs', type: 'bytes[]' },

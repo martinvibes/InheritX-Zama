@@ -1,8 +1,7 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import { useAccount, usePublicClient } from 'wagmi'
 import { HeartPulse, FileText, ShieldCheck, AlertTriangle, Clock, Hexagon } from 'lucide-react'
 import { CONTRACT_ADDRESS } from '../lib/constants'
-import { INHERITX_ABI } from '../lib/contracts'
 
 interface ActivityItem {
   icon: typeof FileText
@@ -12,13 +11,19 @@ interface ActivityItem {
   detail: string
   time: string
   blockNumber: bigint
+  txHash: string
 }
+
+// Cache activities so we don't re-fetch on every mount
+let cachedActivities: ActivityItem[] | null = null
+let cachedFor: string | null = null
 
 export default function ActivityPage() {
   const { address } = useAccount()
   const publicClient = usePublicClient()
-  const [activities, setActivities] = useState<ActivityItem[]>([])
-  const [loading, setLoading] = useState(true)
+  const [activities, setActivities] = useState<ActivityItem[]>(cachedActivities || [])
+  const [loading, setLoading] = useState(!cachedActivities || cachedFor !== address)
+  const fetched = useRef(false)
 
   useEffect(() => {
     if (!publicClient || !address || !CONTRACT_ADDRESS) {
@@ -26,130 +31,113 @@ export default function ActivityPage() {
       return
     }
 
+    // Use cache if available for this address
+    if (cachedActivities && cachedFor === address) {
+      setActivities(cachedActivities)
+      setLoading(false)
+      return
+    }
+
+    if (fetched.current) return
+    fetched.current = true
+
     async function fetchEvents() {
       try {
         const currentBlock = await publicClient!.getBlockNumber()
-        const fromBlock = currentBlock > 10000n ? currentBlock - 10000n : 0n
-
-        const [planCreated, checkIns, kycSubmitted, kycVerified, planTriggered] = await Promise.all([
-          publicClient!.getLogs({
-            address: CONTRACT_ADDRESS,
-            event: {
-              type: 'event', name: 'PlanCreated',
-              inputs: [
-                { indexed: true, name: 'planId', type: 'uint256' },
-                { indexed: true, name: 'owner', type: 'address' },
-                { indexed: false, name: 'planType', type: 'uint8' },
-                { indexed: false, name: 'name', type: 'string' },
-              ],
-            },
-            args: { owner: address },
-            fromBlock, toBlock: currentBlock,
-          }),
-          publicClient!.getLogs({
-            address: CONTRACT_ADDRESS,
-            event: {
-              type: 'event', name: 'CheckIn',
-              inputs: [
-                { indexed: true, name: 'planId', type: 'uint256' },
-                { indexed: true, name: 'owner', type: 'address' },
-                { indexed: false, name: 'timestamp', type: 'uint256' },
-              ],
-            },
-            args: { owner: address },
-            fromBlock, toBlock: currentBlock,
-          }),
-          publicClient!.getLogs({
-            address: CONTRACT_ADDRESS,
-            event: {
-              type: 'event', name: 'KYCSubmitted',
-              inputs: [{ indexed: true, name: 'wallet', type: 'address' }],
-            },
-            args: { wallet: address },
-            fromBlock, toBlock: currentBlock,
-          }),
-          publicClient!.getLogs({
-            address: CONTRACT_ADDRESS,
-            event: {
-              type: 'event', name: 'KYCVerified',
-              inputs: [{ indexed: true, name: 'wallet', type: 'address' }],
-            },
-            args: { wallet: address },
-            fromBlock, toBlock: currentBlock,
-          }),
-          publicClient!.getLogs({
-            address: CONTRACT_ADDRESS,
-            event: {
-              type: 'event', name: 'PlanTriggered',
-              inputs: [
-                { indexed: true, name: 'planId', type: 'uint256' },
-                { indexed: false, name: 'timestamp', type: 'uint256' },
-              ],
-            },
-            fromBlock, toBlock: currentBlock,
-          }),
-        ])
+        // Smaller range to reduce load
+        const fromBlock = currentBlock > 5000n ? currentBlock - 5000n : 0n
 
         const items: ActivityItem[] = []
 
-        for (const log of planCreated) {
-          const args = log.args as any
-          const block = await publicClient!.getBlock({ blockNumber: log.blockNumber! })
-          items.push({
-            icon: FileText, color: 'var(--cyan)', bg: 'rgba(0,212,232,0.06)',
-            label: 'Plan Created',
-            detail: `${args.name || 'Plan'} — ETH amount encrypted on-chain`,
-            time: timeAgo(Number(block.timestamp)),
-            blockNumber: log.blockNumber!,
-          })
+        // Fetch sequentially with small delays to avoid rate limiting
+        const eventConfigs = [
+          {
+            event: { type: 'event' as const, name: 'PlanCreated', inputs: [
+              { indexed: true, name: 'planId', type: 'uint256' },
+              { indexed: true, name: 'owner', type: 'address' },
+              { indexed: false, name: 'planType', type: 'uint8' },
+              { indexed: false, name: 'name', type: 'string' },
+            ]},
+            args: { owner: address },
+            transform: (log: any) => ({
+              icon: FileText, color: 'var(--cyan)', bg: 'rgba(0,212,232,0.06)',
+              label: 'Plan Created',
+              detail: `${(log.args as any)?.name || 'Plan'} — ETH encrypted on-chain`,
+            }),
+          },
+          {
+            event: { type: 'event' as const, name: 'CheckIn', inputs: [
+              { indexed: true, name: 'planId', type: 'uint256' },
+              { indexed: true, name: 'owner', type: 'address' },
+              { indexed: false, name: 'timestamp', type: 'uint256' },
+            ]},
+            args: { owner: address },
+            transform: () => ({
+              icon: HeartPulse, color: 'var(--green)', bg: 'rgba(0,201,138,0.06)',
+              label: 'Check-in',
+              detail: 'Proof of life confirmed — timer reset',
+            }),
+          },
+          {
+            event: { type: 'event' as const, name: 'KYCSubmitted', inputs: [
+              { indexed: true, name: 'wallet', type: 'address' },
+            ]},
+            args: { wallet: address },
+            transform: () => ({
+              icon: ShieldCheck, color: 'var(--gold)', bg: 'rgba(240,160,32,0.06)',
+              label: 'KYC Submitted',
+              detail: 'Identity verification submitted on-chain',
+            }),
+          },
+          {
+            event: { type: 'event' as const, name: 'KYCVerified', inputs: [
+              { indexed: true, name: 'wallet', type: 'address' },
+            ]},
+            args: { wallet: address },
+            transform: () => ({
+              icon: ShieldCheck, color: 'var(--green)', bg: 'rgba(0,201,138,0.06)',
+              label: 'KYC Verified',
+              detail: 'Identity verification complete',
+            }),
+          },
+        ]
+
+        for (const config of eventConfigs) {
+          try {
+            const logs = await publicClient!.getLogs({
+              address: CONTRACT_ADDRESS,
+              event: config.event,
+              args: config.args,
+              fromBlock,
+              toBlock: currentBlock,
+            })
+
+            for (const log of logs) {
+              const data = config.transform(log)
+              // Estimate time from block number instead of fetching each block
+              const blocksAgo = Number(currentBlock - (log.blockNumber || 0n))
+              const secondsAgo = blocksAgo * 12 // ~12s per block on Sepolia
+              items.push({
+                ...data,
+                time: timeAgo(Math.floor(Date.now() / 1000) - secondsAgo),
+                blockNumber: log.blockNumber || 0n,
+                txHash: log.transactionHash || '',
+              })
+            }
+
+            // Small delay between requests to avoid rate limiting
+            await new Promise(r => setTimeout(r, 300))
+          } catch (err) {
+            console.warn(`Failed to fetch ${config.event.name} events:`, err)
+          }
         }
 
-        for (const log of checkIns) {
-          const block = await publicClient!.getBlock({ blockNumber: log.blockNumber! })
-          items.push({
-            icon: HeartPulse, color: 'var(--green)', bg: 'rgba(0,201,138,0.06)',
-            label: 'Check-in',
-            detail: `Proof of life confirmed — timer reset`,
-            time: timeAgo(Number(block.timestamp)),
-            blockNumber: log.blockNumber!,
-          })
-        }
-
-        for (const log of kycSubmitted) {
-          const block = await publicClient!.getBlock({ blockNumber: log.blockNumber! })
-          items.push({
-            icon: ShieldCheck, color: 'var(--gold)', bg: 'rgba(240,160,32,0.06)',
-            label: 'KYC Submitted',
-            detail: 'Identity verification submitted on-chain',
-            time: timeAgo(Number(block.timestamp)),
-            blockNumber: log.blockNumber!,
-          })
-        }
-
-        for (const log of kycVerified) {
-          const block = await publicClient!.getBlock({ blockNumber: log.blockNumber! })
-          items.push({
-            icon: ShieldCheck, color: 'var(--green)', bg: 'rgba(0,201,138,0.06)',
-            label: 'KYC Verified',
-            detail: 'Identity verification complete',
-            time: timeAgo(Number(block.timestamp)),
-            blockNumber: log.blockNumber!,
-          })
-        }
-
-        for (const log of planTriggered) {
-          const block = await publicClient!.getBlock({ blockNumber: log.blockNumber! })
-          items.push({
-            icon: AlertTriangle, color: 'var(--gold)', bg: 'rgba(240,160,32,0.06)',
-            label: 'Plan Triggered',
-            detail: `Plan #${(log.args as any).planId?.toString()} triggered — heirs can now claim`,
-            time: timeAgo(Number(block.timestamp)),
-            blockNumber: log.blockNumber!,
-          })
-        }
-
-        // Sort by block number descending
+        // Sort newest first
         items.sort((a, b) => Number(b.blockNumber - a.blockNumber))
+
+        // Cache
+        cachedActivities = items
+        cachedFor = address!
         setActivities(items)
       } catch (err) {
         console.error('Failed to fetch events:', err)
@@ -185,7 +173,14 @@ export default function ActivityPage() {
                 <div className="act-label">{item.label}</div>
                 <div className="act-detail">{item.detail}</div>
               </div>
-              <div className="act-time"><Clock size={10} strokeWidth={2} /> {item.time}</div>
+              <div className="act-right">
+                <div className="act-time"><Clock size={10} strokeWidth={2} /> {item.time}</div>
+                {item.txHash && (
+                  <a className="act-tx" href={`https://sepolia.etherscan.io/tx/${item.txHash}`} target="_blank" rel="noopener" onClick={e => e.stopPropagation()}>
+                    {item.txHash.slice(0, 6)}...{item.txHash.slice(-4)}
+                  </a>
+                )}
+              </div>
             </div>
           ))}
         </div>
@@ -222,7 +217,10 @@ const styles = `
 .act-info { flex: 1; }
 .act-label { font-size: 13px; font-weight: 600; color: var(--t1); margin-bottom: 2px; }
 .act-detail { font-size: 12px; color: var(--t3); }
+.act-right { display: flex; flex-direction: column; align-items: flex-end; gap: 3px; flex-shrink: 0; }
 .act-time { display: flex; align-items: center; gap: 4px; font-size: 11px; color: var(--t3); white-space: nowrap; font-family: 'JetBrains Mono', monospace; }
+.act-tx { font-size: 10px; color: var(--cyan); font-family: 'JetBrains Mono', monospace; opacity: 0.6; transition: opacity 0.15s; }
+.act-tx:hover { opacity: 1; }
 .act-loading { display: flex; align-items: center; gap: 10px; justify-content: center; padding: 40px; color: var(--t3); font-size: 13px; }
 .act-empty { text-align: center; padding: 48px 20px; color: var(--t3); font-size: 13px; display: flex; flex-direction: column; align-items: center; gap: 12px; background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.05); border-radius: 14px; }
 .spin { animation: spin 1s linear infinite; }

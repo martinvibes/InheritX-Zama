@@ -5,7 +5,15 @@ import { RainbowKitProvider, darkTheme } from '@rainbow-me/rainbowkit'
 import '@rainbow-me/rainbowkit/styles.css'
 import { config } from './lib/wagmi'
 import Landing from './pages/Landing'
-import Dashboard from './pages/Dashboard'
+import DashboardShell from './pages/DashboardShell'
+import Overview from './pages/Overview'
+import MyPlans from './pages/MyPlans'
+import PlanDetail from './pages/PlanDetail'
+import CreatePlan from './pages/CreatePlan'
+import KYCVerification from './pages/KYCVerification'
+import ActivityPage from './pages/ActivityPage'
+import SecurityPage from './pages/SecurityPage'
+import ClaimInheritance from './pages/ClaimInheritance'
 
 const queryClient = new QueryClient()
 
@@ -24,7 +32,16 @@ function App() {
           <BrowserRouter>
             <Routes>
               <Route path="/" element={<Landing />} />
-              <Route path="/dashboard" element={<Dashboard />} />
+              <Route path="/dashboard" element={<DashboardShell />}>
+                <Route index element={<Overview />} />
+                <Route path="plans" element={<MyPlans />} />
+              <Route path="plans/:planId" element={<PlanDetail />} />
+                <Route path="create" element={<CreatePlan />} />
+                <Route path="kyc" element={<KYCVerification />} />
+                <Route path="activity" element={<ActivityPage />} />
+                <Route path="security" element={<SecurityPage />} />
+                <Route path="claim" element={<ClaimInheritance />} />
+              </Route>
             </Routes>
           </BrowserRouter>
         </RainbowKitProvider>

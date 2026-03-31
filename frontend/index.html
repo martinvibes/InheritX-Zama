@@ -10,6 +10,15 @@
     <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=Inter:wght@300;400;500&family=JetBrains+Mono:wght@300;400&display=swap" rel="stylesheet" />
   </head>
   <body>
+    <script>
+      // Polyfill Node.js globals — must run before any modules load
+      if (typeof globalThis.global === 'undefined') {
+        Object.defineProperty(globalThis, 'global', { value: globalThis, writable: true, configurable: true });
+      }
+      if (typeof globalThis.process === 'undefined') {
+        globalThis.process = { env: {}, browser: true };
+      }
+    </script>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>

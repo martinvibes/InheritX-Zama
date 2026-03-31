@@ -29,6 +29,8 @@ interface Heir {
   sharePct: number;
 }
 
+import DatePicker from '../components/shared/DatePicker'
+
 const STEPS = ["Plan Type", "Beneficiaries", "Conditions", "Review"];
 
 function Toast({ message, onClose }: { message: string; onClose: () => void }) {
@@ -123,70 +125,138 @@ export default function CreatePlan() {
     totalShare === 100 &&
     Number(ethAmount) > 0;
 
-  const handleSubmit = () => {
-    if (!CONTRACT_ADDRESS || !canSubmit) return;
-    setError("");
+  const [submitting, setSubmitting] = useState(false)
 
-    const addresses = heirs.map((h) => h.address as `0x${string}`);
-    const shares = heirs.map((h) => h.sharePct * 100); // basis points (100% = 10000)
+  const handleSubmit = async () => {
+    if (!CONTRACT_ADDRESS || !canSubmit || !address || submitting) return
+    setSubmitting(true)
+    setError('')
 
-    const unlockTs =
-      planType === "goal" && unlockDate
-        ? BigInt(Math.floor(new Date(unlockDate).getTime() / 1000))
-        : BigInt(0);
+    const unlockTs = planType === 'goal' && unlockDate
+      ? BigInt(Math.floor(new Date(unlockDate).getTime() / 1000))
+      : BigInt(0)
 
-    // Uses createPlanDirect — contract encrypts on-chain via FHE.asEaddress()
-    writeContract({
-      address: CONTRACT_ADDRESS,
-      abi: INHERITX_ABI,
-      functionName: "createPlanDirect",
-      args: [
-        planType === "inheritance" ? 0 : 1,
-        planName ||
-          (planType === "inheritance"
-            ? "Inheritance Plan"
-            : "Future Goal Plan"),
-        planDescription,
-        addresses,
-        shares,
-        BigInt(planType === "inheritance" ? inactivityDays : 0),
-        unlockTs,
-      ],
-      value: parseEther(ethAmount || "0"),
-      gas: BigInt(8_000_000),
-    } as any);
-  };
+    try {
+      // Try client-side encryption first (proper FHE flow)
+      const { getFhevmInstance } = await import('../lib/fhe')
+      const fhevm = await getFhevmInstance()
 
-  const [successPhase, setSuccessPhase] = useState<'encrypting' | 'done' | null>(null)
+      // Encrypt all values client-side
+      const input = fhevm.createEncryptedInput(CONTRACT_ADDRESS, address)
+      // Add each heir address and share
+      for (const h of heirs) {
+        input.addAddress(h.address)
+      }
+      for (const h of heirs) {
+        input.add32(h.sharePct * 100) // basis points
+      }
+      const encrypted = await input.encrypt()
+
+      const heirCount = heirs.length
+      const encAddrHandles = encrypted.handles.slice(0, heirCount).map((h: Uint8Array) => ('0x' + Buffer.from(h).toString('hex')) as `0x${string}`)
+      const encShareHandles = encrypted.handles.slice(heirCount).map((h: Uint8Array) => ('0x' + Buffer.from(h).toString('hex')) as `0x${string}`)
+      const proof = ('0x' + Buffer.from(encrypted.inputProof).toString('hex')) as `0x${string}`
+
+      // Use createPlan with encrypted inputs — data is private on-chain
+      writeContract({
+        address: CONTRACT_ADDRESS,
+        abi: INHERITX_ABI,
+        functionName: 'createPlan',
+        args: [
+          planType === 'inheritance' ? 0 : 1,
+          planName || (planType === 'inheritance' ? 'Inheritance Plan' : 'Future Goal Plan'),
+          planDescription,
+          encAddrHandles,
+          encShareHandles,
+          encAddrHandles.map(() => proof),
+          encShareHandles.map(() => proof),
+          BigInt(planType === 'inheritance' ? inactivityDays : 0),
+          unlockTs,
+        ],
+        value: parseEther(ethAmount || '0'),
+        gas: BigInt(10_000_000),
+      } as any)
+    } catch (fheErr: any) {
+      console.log('Client-side encryption unavailable, using direct mode:', fheErr.message)
+
+      // Fallback: use createPlanDirect (on-chain encryption, calldata visible)
+      writeContract({
+        address: CONTRACT_ADDRESS,
+        abi: INHERITX_ABI,
+        functionName: 'createPlanDirect',
+        args: [
+          planType === 'inheritance' ? 0 : 1,
+          planName || (planType === 'inheritance' ? 'Inheritance Plan' : 'Future Goal Plan'),
+          planDescription,
+          heirs.map(h => h.address as `0x${string}`),
+          heirs.map(h => h.sharePct * 100),
+          BigInt(planType === 'inheritance' ? inactivityDays : 0),
+          unlockTs,
+        ],
+        value: parseEther(ethAmount || '0'),
+        gas: BigInt(8_000_000),
+      } as any)
+    }
+  }
+
+  // Reset submitting when tx fails or succeeds
+  useEffect(() => {
+    if (writeError || isSuccess) setSubmitting(false)
+  }, [writeError, isSuccess])
+
+  const [successPhase, setSuccessPhase] = useState<
+    "encrypting" | "done" | null
+  >(null);
 
   useEffect(() => {
     if (isSuccess && !successPhase) {
-      setSuccessPhase('encrypting')
-      setTimeout(() => setSuccessPhase('done'), 3000)
+      setSuccessPhase("encrypting");
+      setTimeout(() => setSuccessPhase("done"), 3000);
     }
-  }, [isSuccess])
+  }, [isSuccess]);
 
   if (successPhase) {
     return (
       <>
         <style>{styles}</style>
         <div className="cs-fullpage">
-
-          {successPhase === 'encrypting' && (
+          {successPhase === "encrypting" && (
             <div className="cs-encrypting">
-              <div className="cs-enc-hex"><Hexagon size={36} strokeWidth={1} /></div>
+              <div className="cs-enc-hex">
+                <Hexagon size={36} strokeWidth={1} />
+              </div>
               <h2 className="cs-enc-title">Encrypting & Deploying</h2>
               <div className="cs-enc-steps">
-                <div className="cs-enc-step cs-enc-s1"><Lock size={12} strokeWidth={2} /> <span>Encrypting heir addresses → <code>eaddress</code></span></div>
-                <div className="cs-enc-step cs-enc-s2"><Lock size={12} strokeWidth={2} /> <span>Encrypting ETH amount → <code>euint128</code></span></div>
-                <div className="cs-enc-step cs-enc-s3"><Lock size={12} strokeWidth={2} /> <span>Encrypting share splits → <code>euint32</code></span></div>
-                <div className="cs-enc-step cs-enc-s4"><CheckCircle2 size={12} strokeWidth={2} /> <span>Deploying to Ethereum Sepolia</span></div>
+                <div className="cs-enc-step cs-enc-s1">
+                  <Lock size={12} strokeWidth={2} />{" "}
+                  <span>
+                    Encrypting heir addresses → <code>eaddress</code>
+                  </span>
+                </div>
+                <div className="cs-enc-step cs-enc-s2">
+                  <Lock size={12} strokeWidth={2} />{" "}
+                  <span>
+                    Encrypting ETH amount → <code>euint128</code>
+                  </span>
+                </div>
+                <div className="cs-enc-step cs-enc-s3">
+                  <Lock size={12} strokeWidth={2} />{" "}
+                  <span>
+                    Encrypting share splits → <code>euint32</code>
+                  </span>
+                </div>
+                <div className="cs-enc-step cs-enc-s4">
+                  <CheckCircle2 size={12} strokeWidth={2} />{" "}
+                  <span>Deploying to Ethereum Sepolia</span>
+                </div>
               </div>
-              <div className="cs-enc-bar"><div className="cs-enc-fill" /></div>
+              <div className="cs-enc-bar">
+                <div className="cs-enc-fill" />
+              </div>
             </div>
           )}
 
-          {successPhase === 'done' && (
+          {successPhase === "done" && (
             <div className="cp-success cs-fadein">
               <div className="cs-rings">
                 <div className="cs-ring cs-ring-1" />
@@ -200,32 +270,61 @@ export default function CreatePlan() {
               </div>
 
               <h2 className="cs-title">Legacy Secured</h2>
-              <p className="cs-subtitle">Your plan is live on Ethereum Sepolia</p>
+              <p className="cs-subtitle">
+                Your plan is live on Ethereum Sepolia
+              </p>
 
               <div className="cs-encrypt-visual">
-                <div className="cs-ev-row"><span className="cs-ev-label">Heir addresses</span><span className="cs-ev-value cs-ev-encrypted">0x8f3a...████████</span><span className="cs-ev-badge">eaddress</span></div>
-                <div className="cs-ev-row"><span className="cs-ev-label">ETH amount</span><span className="cs-ev-value cs-ev-encrypted">████████████</span><span className="cs-ev-badge">euint128</span></div>
-                <div className="cs-ev-row"><span className="cs-ev-label">Share splits</span><span className="cs-ev-value cs-ev-encrypted">██████</span><span className="cs-ev-badge">euint32</span></div>
+                <div className="cs-ev-row">
+                  <span className="cs-ev-label">Heir addresses</span>
+                  <span className="cs-ev-value cs-ev-encrypted">
+                    0x8f3a...████████
+                  </span>
+                  <span className="cs-ev-badge">eaddress</span>
+                </div>
+                <div className="cs-ev-row">
+                  <span className="cs-ev-label">ETH amount</span>
+                  <span className="cs-ev-value cs-ev-encrypted">
+                    ████████████
+                  </span>
+                  <span className="cs-ev-badge">euint128</span>
+                </div>
+                <div className="cs-ev-row">
+                  <span className="cs-ev-label">Share splits</span>
+                  <span className="cs-ev-value cs-ev-encrypted">██████</span>
+                  <span className="cs-ev-badge">euint32</span>
+                </div>
               </div>
 
-              <p className="cs-note">All sensitive data is encrypted via Zama fhEVM. Nobody — not validators, not block explorers — can read your beneficiaries or amounts.</p>
+              <p className="cs-note">
+                All sensitive data is encrypted via Zama fhEVM. Nobody, not
+                validators, not block explorers — can read your beneficiaries or
+                amounts.
+              </p>
 
               <div className="cs-actions">
                 {txHash && (
-                  <a className="cs-etherscan" href={`https://sepolia.etherscan.io/tx/${txHash}`} target="_blank" rel="noopener">
+                  <a
+                    className="cs-etherscan"
+                    href={`https://sepolia.etherscan.io/tx/${txHash}`}
+                    target="_blank"
+                    rel="noopener"
+                  >
                     <Hexagon size={12} strokeWidth={2} /> View Transaction
                   </a>
                 )}
-                <button className="cp-btn-primary" onClick={() => window.location.reload()}>
+                <button
+                  className="cp-btn-primary"
+                  onClick={() => window.location.reload()}
+                >
                   <Plus size={14} strokeWidth={2} /> Create Another Plan
                 </button>
               </div>
             </div>
           )}
-
         </div>
       </>
-    )
+    );
   }
 
   return (
@@ -415,12 +514,7 @@ export default function CreatePlan() {
                   <Clock size={13} strokeWidth={2} /> Unlock Date{" "}
                   <span className="cp-req">Required</span>
                 </label>
-                <input
-                  className="cp-input"
-                  type="date"
-                  value={unlockDate}
-                  onChange={(e) => setUnlockDate(e.target.value)}
-                />
+                <DatePicker value={unlockDate} onChange={setUnlockDate} />
                 <span className="cp-field-hint">
                   Assets release on this date.
                 </span>
@@ -555,12 +649,12 @@ export default function CreatePlan() {
               }
               handleSubmit();
             }}
-            disabled={isSubmitting}
+            disabled={isSubmitting || submitting}
           >
-            {isSubmitting ? (
+            {isSubmitting || submitting ? (
               <>
                 <Loader2 size={14} className="spin" />{" "}
-                {isPending ? "Confirm in wallet..." : "Deploying..."}
+                {submitting && !isPending ? "Encrypting..." : isPending ? "Confirm in wallet..." : "Deploying..."}
               </>
             ) : (
               <>

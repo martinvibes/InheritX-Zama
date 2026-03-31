@@ -1,6 +1,5 @@
-import { useState, useEffect } from 'react'
 import { HeartPulse, Check, Loader2 } from 'lucide-react'
-import { useCheckIn } from '../../hooks/usePlans'
+import { useCheckIn, usePlan } from '../../hooks/usePlans'
 
 interface CheckInAlertProps {
   daysLeft: number
@@ -9,14 +8,11 @@ interface CheckInAlertProps {
 
 export default function CheckInAlert({ daysLeft, planId }: CheckInAlertProps) {
   const { checkIn, isPending, isConfirming, isSuccess } = useCheckIn()
-  const [days, setDays] = useState(daysLeft)
-
-  useEffect(() => {
-    if (isSuccess) setDays(180) // Reset to full window after successful check-in
-  }, [isSuccess])
+  const { plan } = usePlan(planId)
 
   const isLoading = isPending || isConfirming
-  const pct = Math.round((days / 180) * 100)
+  const inactivityDays = plan ? Number(plan.inactivityDays) : 180
+  const pct = inactivityDays > 0 ? Math.min(100, Math.round((daysLeft / inactivityDays) * 100)) : 0
 
   return (
     <div className="heartbeat-card">
@@ -24,8 +20,8 @@ export default function CheckInAlert({ daysLeft, planId }: CheckInAlertProps) {
         <div className="hb-header">
           <div className="hb-pulse-dot" />
           <span className="hb-title">Proof of Life</span>
-          <span className={`hb-status ${days > 30 ? 'hb-safe' : 'hb-warn'}`}>
-            {days > 30 ? 'Safe' : 'Action Needed'}
+          <span className={`hb-status ${daysLeft > 7 ? 'hb-safe' : 'hb-warn'}`}>
+            {daysLeft > 7 ? 'Safe' : daysLeft > 0 ? 'Action Needed' : 'Overdue'}
           </span>
         </div>
         <div className="hb-ecg-wrap">
@@ -36,7 +32,7 @@ export default function CheckInAlert({ daysLeft, planId }: CheckInAlertProps) {
         </div>
         <div className="hb-meta">
           <div className="hb-days">
-            <span className="hb-days-num">{days}</span>
+            <span className="hb-days-num">{daysLeft}</span>
             <span className="hb-days-label">days remaining</span>
           </div>
           <div className="hb-progress-wrap">

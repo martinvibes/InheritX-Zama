@@ -8,23 +8,25 @@ import {
   Gift,
   LogOut,
   CircleDot,
+  PlusCircle,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { LogoMark } from '../shared/Logo'
 
-interface NavItem { icon: LucideIcon; label: string; id: string; badge?: string }
+interface NavItem { icon: LucideIcon; label: string; id: string; route: string }
 
 const mainNav: NavItem[] = [
-  { icon: LayoutDashboard, label: 'Overview', id: 'overview' },
-  { icon: FileText, label: 'My Plans', id: 'plans' },
-  { icon: Activity, label: 'Activity', id: 'activity' },
+  { icon: LayoutDashboard, label: 'Overview', id: 'overview', route: '/dashboard' },
+  { icon: PlusCircle, label: 'Create Plan', id: 'create', route: '/dashboard/create' },
+  { icon: FileText, label: 'My Plans', id: 'plans', route: '/dashboard/plans' },
+  { icon: Activity, label: 'Activity', id: 'activity', route: '/dashboard/activity' },
 ]
 
 const managementNav: NavItem[] = [
-  { icon: ShieldCheck, label: 'KYC Verification', id: 'kyc' },
-  { icon: Lock, label: 'Security', id: 'security' },
-  { icon: Settings, label: 'Settings', id: 'settings' },
+  { icon: ShieldCheck, label: 'KYC Verification', id: 'kyc', route: '/dashboard/kyc' },
+  { icon: Lock, label: 'Security', id: 'security', route: '/dashboard/security' },
+  { icon: Settings, label: 'Settings', id: 'settings', route: '/dashboard' },
 ]
 
 interface SidebarProps {
@@ -36,9 +38,12 @@ interface SidebarProps {
 export default function Sidebar({ active, onNavigate, kycStatus }: SidebarProps) {
   const navigate = useNavigate()
 
+  const handleNav = (route: string) => {
+    navigate(route)
+  }
+
   return (
     <aside className="sidebar">
-      {/* Logo area */}
       <div className="sb-brand" onClick={() => navigate('/')} style={{ cursor: 'pointer' }}>
         <LogoMark size={24} />
         <div className="sb-brand-info">
@@ -48,15 +53,13 @@ export default function Sidebar({ active, onNavigate, kycStatus }: SidebarProps)
       </div>
 
       <div className="sb-nav-scroll">
-        {/* Main nav */}
-        <NavGroup label="Navigate" items={mainNav} active={active} onNavigate={onNavigate} />
+        <NavGroup label="Navigate" items={mainNav} active={active} onNavigate={handleNav} />
 
-        {/* Claim — standalone highlight */}
         <div className="sb-section">
           <div className="sb-label">Beneficiary</div>
           <div
             className={`sb-item sb-item-claim${active === 'claim' ? ' active' : ''}`}
-            onClick={() => onNavigate('claim')}
+            onClick={() => handleNav('/dashboard/claim')}
           >
             <div className="sb-item-inner">
               <Gift size={15} strokeWidth={1.8} />
@@ -66,13 +69,10 @@ export default function Sidebar({ active, onNavigate, kycStatus }: SidebarProps)
           </div>
         </div>
 
-        {/* Management */}
-        <NavGroup label="Management" items={managementNav} active={active} onNavigate={onNavigate} />
+        <NavGroup label="Management" items={managementNav} active={active} onNavigate={handleNav} />
       </div>
 
-      {/* Bottom */}
       <div className="sb-footer">
-        {/* FHE status */}
         <div className="sb-status-card">
           <div className="sb-status-row">
             <CircleDot size={10} strokeWidth={2.5} style={{ color: 'var(--green)' }} />
@@ -88,7 +88,6 @@ export default function Sidebar({ active, onNavigate, kycStatus }: SidebarProps)
           </div>
         </div>
 
-        {/* Disconnect */}
         <div className="sb-item sb-disconnect" onClick={() => {}}>
           <div className="sb-item-inner">
             <LogOut size={14} strokeWidth={1.8} />
@@ -100,7 +99,7 @@ export default function Sidebar({ active, onNavigate, kycStatus }: SidebarProps)
   )
 }
 
-function NavGroup({ label, items, active, onNavigate }: { label: string; items: NavItem[]; active: string; onNavigate: (id: string) => void }) {
+function NavGroup({ label, items, active, onNavigate }: { label: string; items: NavItem[]; active: string; onNavigate: (route: string) => void }) {
   return (
     <div className="sb-section">
       <div className="sb-label">{label}</div>
@@ -109,13 +108,12 @@ function NavGroup({ label, items, active, onNavigate }: { label: string; items: 
           <div
             key={item.id}
             className={`sb-item${active === item.id ? ' active' : ''}`}
-            onClick={() => onNavigate(item.id)}
+            onClick={() => onNavigate(item.route)}
           >
             <div className="sb-item-inner">
               <item.icon size={15} strokeWidth={1.8} />
               <span>{item.label}</span>
             </div>
-            {item.badge && <span className="sb-badge">{item.badge}</span>}
           </div>
         ))}
       </div>

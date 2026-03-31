@@ -1,56 +1,66 @@
-import { useState, useEffect } from 'react'
-import { useAccount, useWriteContract, useWaitForTransactionReceipt } from 'wagmi'
+import { useEffect, useState } from 'react'
+import { useAccount, useWriteContract, useWaitForTransactionReceipt, useReadContract } from 'wagmi'
 import { ShieldCheck, ArrowRight, Loader2, CheckCircle2, Clock, AlertTriangle } from 'lucide-react'
-import { useKYC } from '../hooks/useKYC'
 import { CONTRACT_ADDRESS } from '../lib/constants'
 import { INHERITX_ABI } from '../lib/contracts'
 
 export default function KYCVerification() {
   const { address, isConnected } = useAccount()
-  const kyc = useKYC(address)
-  const [step, setStep] = useState<'idle' | 'submitting' | 'verifying' | 'done'>('idle')
 
-  // For self-verification (deployer is KYC verifier)
-  const { writeContract: writeVerify, data: verifyHash } = useWriteContract()
-  const { isSuccess: verifyConfirmed } = useWaitForTransactionReceipt({ hash: verifyHash })
+  // Read current KYC status from chain
+  const { data: rawStatus, refetch: refetchStatus } = useReadContract({
+    address: CONTRACT_ADDRESS,
+    abi: INHERITX_ABI,
+    functionName: 'kycStatus',
+    args: address ? [address] : undefined,
+    query: { enabled: !!address && !!CONTRACT_ADDRESS },
+  })
 
-  // Watch for KYC status changes
+  const kycStatus = rawStatus !== undefined ? Number(rawStatus) : 0
+  // 0 = NOT_SUBMITTED, 1 = SUBMITTED, 2 = VERIFIED
+
+  // Submit KYC tx
+  const { writeContract: writeSubmit, data: submitHash, isPending: submitPending, error: submitError } = useWriteContract()
+  const { isLoading: submitConfirming, isSuccess: submitSuccess } = useWaitForTransactionReceipt({ hash: submitHash })
+
+  // Verify KYC tx (self-verify since deployer = user)
+  const { writeContract: writeVerify, data: verifyHash, isPending: verifyPending } = useWriteContract()
+  const { isLoading: verifyConfirming, isSuccess: verifySuccess } = useWaitForTransactionReceipt({ hash: verifyHash })
+
+  // After submit confirms, auto-verify
   useEffect(() => {
-    if (kyc.status === 'VERIFIED') setStep('done')
-    else if (kyc.status === 'SUBMITTED') setStep('verifying')
-  }, [kyc.status])
-
-  // After submit succeeds, auto-verify (since deployer == user for demo)
-  useEffect(() => {
-    if (kyc.isSuccess && step === 'submitting' && address && CONTRACT_ADDRESS) {
-      setStep('verifying')
-      // Small delay then self-verify
-      setTimeout(() => {
-        if (!CONTRACT_ADDRESS || !address) return
+    if (submitSuccess && address && CONTRACT_ADDRESS) {
+      const timer = setTimeout(() => {
         writeVerify({
           address: CONTRACT_ADDRESS,
           abi: INHERITX_ABI,
           functionName: 'verifyKYC' as any,
           args: [address] as any,
         })
-      }, 1500)
+      }, 1000)
+      return () => clearTimeout(timer)
     }
-  }, [kyc.isSuccess, step])
+  }, [submitSuccess])
 
-  // After verify tx confirms
+  // After verify confirms, refetch status
   useEffect(() => {
-    if (verifyConfirmed) {
-      setStep('done')
-      kyc.refetch()
+    if (verifySuccess) {
+      refetchStatus()
     }
-  }, [verifyConfirmed])
+  }, [verifySuccess])
 
   const handleSubmit = () => {
-    setStep('submitting')
-    kyc.submitKYC()
+    if (!CONTRACT_ADDRESS || !address) return
+    writeSubmit({
+      address: CONTRACT_ADDRESS,
+      abi: INHERITX_ABI,
+      functionName: 'submitKYC',
+    })
   }
 
-  const status = kyc.status
+  const isSubmitting = submitPending || submitConfirming
+  const isVerifying = verifyPending || verifyConfirming
+  const isVerified = kycStatus === 2 || verifySuccess
 
   return (
     <div className="page-container">
@@ -64,20 +74,45 @@ export default function KYCVerification() {
       </div>
 
       <div className="kyc-card">
-        {status === 'NOT_SUBMITTED' && step !== 'submitting' && (
+        {isVerified ? (
           <>
-            <div className="kyc-status-icon kyc-si-warn">
-              <AlertTriangle size={28} strokeWidth={1.5} />
-            </div>
+            <div className="kyc-status-icon kyc-si-ok"><CheckCircle2 size={28} strokeWidth={1.5} /></div>
+            <h2 className="kyc-card-title">Verified</h2>
+            <p className="kyc-card-sub">Your identity is verified on-chain. You can now create inheritance plans.</p>
+            <div className="kyc-verified-badge"><CheckCircle2 size={12} strokeWidth={2.5} /> KYC Verified</div>
+          </>
+        ) : isVerifying ? (
+          <>
+            <div className="kyc-status-icon kyc-si-pending"><Loader2 size={28} strokeWidth={1.5} className="spin" /></div>
+            <h2 className="kyc-card-title">Verifying...</h2>
+            <p className="kyc-card-sub">Confirming verification on-chain. Please approve the transaction in your wallet.</p>
+          </>
+        ) : submitSuccess || kycStatus === 1 ? (
+          <>
+            <div className="kyc-status-icon kyc-si-pending"><Clock size={28} strokeWidth={1.5} /></div>
+            <h2 className="kyc-card-title">Submitted — Verifying</h2>
+            <p className="kyc-card-sub">KYC submitted. Auto-verification in progress...</p>
+            <div className="kyc-loader-bar"><div className="kyc-loader-fill" /></div>
+          </>
+        ) : isSubmitting ? (
+          <>
+            <div className="kyc-status-icon kyc-si-pending"><Loader2 size={28} strokeWidth={1.5} className="spin" /></div>
+            <h2 className="kyc-card-title">Submitting KYC...</h2>
+            <p className="kyc-card-sub">{submitPending ? 'Please approve the transaction in your wallet.' : 'Waiting for on-chain confirmation...'}</p>
+          </>
+        ) : (
+          <>
+            <div className="kyc-status-icon kyc-si-warn"><AlertTriangle size={28} strokeWidth={1.5} /></div>
             <h2 className="kyc-card-title">Verification Required</h2>
-            <p className="kyc-card-sub">
-              Complete identity verification to unlock plan creation. This is a one-time on-chain transaction.
-            </p>
+            <p className="kyc-card-sub">Complete identity verification to unlock plan creation. Two transactions — submit then verify.</p>
             <div className="kyc-steps">
-              <div className="kyc-step"><span className="kyc-step-num">1</span><span>Submit KYC transaction on-chain</span></div>
-              <div className="kyc-step"><span className="kyc-step-num">2</span><span>Verifier confirms your identity</span></div>
-              <div className="kyc-step"><span className="kyc-step-num">3</span><span>Start creating inheritance plans</span></div>
+              <div className="kyc-step"><span className="kyc-step-num">1</span><span>Submit KYC (sign transaction)</span></div>
+              <div className="kyc-step"><span className="kyc-step-num">2</span><span>Auto-verify (sign second transaction)</span></div>
+              <div className="kyc-step"><span className="kyc-step-num">3</span><span>Start creating plans</span></div>
             </div>
+            {submitError && (
+              <div className="kyc-error">{submitError.message.includes('already submitted') ? 'KYC already submitted' : 'Transaction failed. Try again.'}</div>
+            )}
             {!isConnected ? (
               <p className="kyc-connect-hint">Connect your wallet first.</p>
             ) : (
@@ -85,38 +120,6 @@ export default function KYCVerification() {
                 Submit KYC <ArrowRight size={14} strokeWidth={2} />
               </button>
             )}
-          </>
-        )}
-
-        {(step === 'submitting' || (status === 'NOT_SUBMITTED' && kyc.isPending)) && (
-          <>
-            <div className="kyc-status-icon kyc-si-pending">
-              <Loader2 size={28} strokeWidth={1.5} className="spin" />
-            </div>
-            <h2 className="kyc-card-title">Submitting KYC...</h2>
-            <p className="kyc-card-sub">Confirm the transaction in your wallet. This registers your identity on-chain.</p>
-          </>
-        )}
-
-        {(step === 'verifying' || status === 'SUBMITTED') && step !== 'done' && (
-          <>
-            <div className="kyc-status-icon kyc-si-pending">
-              <Clock size={28} strokeWidth={1.5} />
-            </div>
-            <h2 className="kyc-card-title">Verifying...</h2>
-            <p className="kyc-card-sub">Your submission is being verified on-chain. This takes a few seconds on testnet.</p>
-            <div className="kyc-loader-bar"><div className="kyc-loader-fill" /></div>
-          </>
-        )}
-
-        {(step === 'done' || status === 'VERIFIED') && (
-          <>
-            <div className="kyc-status-icon kyc-si-ok">
-              <CheckCircle2 size={28} strokeWidth={1.5} />
-            </div>
-            <h2 className="kyc-card-title">Verified</h2>
-            <p className="kyc-card-sub">Your identity is verified on-chain. You can now create inheritance plans.</p>
-            <div className="kyc-verified-badge"><CheckCircle2 size={12} strokeWidth={2.5} /> KYC Verified</div>
           </>
         )}
       </div>
@@ -146,6 +149,7 @@ const styles = `
 .kyc-loader-fill { height: 100%; width: 30%; background: var(--cyan); border-radius: 2px; animation: kyc-load 1.5s ease-in-out infinite; }
 @keyframes kyc-load { 0%{width:0;margin-left:0} 50%{width:60%;margin-left:20%} 100%{width:0;margin-left:100%} }
 .kyc-verified-badge { display: flex; align-items: center; gap: 5px; font-size: 12px; font-weight: 600; color: var(--green); background: rgba(0,201,138,0.08); border: 1px solid rgba(0,201,138,0.15); padding: 6px 14px; border-radius: 6px; font-family: 'JetBrains Mono', monospace; }
+.kyc-error { padding: 8px 14px; border-radius: 8px; background: rgba(224,80,80,0.06); border: 1px solid rgba(224,80,80,0.15); font-size: 12px; color: var(--red); margin-bottom: 16px; }
 .spin { animation: spin 1s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 `
