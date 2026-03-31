@@ -303,7 +303,7 @@ export default function Landing() {
             <p className="cta-sub">Join thousands who trust InheritX for their digital future planning. Set up in minutes. Protected forever.</p>
             <div className="cta-btns">
               <button className="btn-primary btn-lg" onClick={handleLaunchApp}>Go to Dashboard <ArrowUpRight size={15} strokeWidth={2} /></button>
-              <a className="btn-secondary" href="#">Read the Docs</a>
+              <a className="btn-secondary" href="/docs">Read the Docs</a>
             </div>
           </div>
         </section>
@@ -318,7 +318,7 @@ export default function Landing() {
           <div className="footer-links">
             <a href="#">Terms</a>
             <a href="#">Privacy</a>
-            <a href="#">Docs</a>
+            <a href="/docs">Docs</a>
           </div>
         </footer>
 

@@ -5,6 +5,7 @@ import { RainbowKitProvider, darkTheme } from '@rainbow-me/rainbowkit'
 import '@rainbow-me/rainbowkit/styles.css'
 import { config } from './lib/wagmi'
 import Landing from './pages/Landing'
+import Docs from './pages/Docs'
 import DashboardShell from './pages/DashboardShell'
 import Overview from './pages/Overview'
 import MyPlans from './pages/MyPlans'
@@ -32,6 +33,7 @@ function App() {
           <BrowserRouter>
             <Routes>
               <Route path="/" element={<Landing />} />
+              <Route path="/docs" element={<Docs />} />
               <Route path="/dashboard" element={<DashboardShell />}>
                 <Route index element={<Overview />} />
                 <Route path="plans" element={<MyPlans />} />
