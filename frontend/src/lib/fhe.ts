@@ -102,13 +102,14 @@ export async function decryptValue(
     )
 
     // Match result key (case-insensitive)
-    if (results[handleHex] !== undefined) return results[handleHex] as bigint
+    const r = results as Record<string, any>
+    if (r[handleHex] !== undefined) return r[handleHex] as bigint
     const lowerHandle = handleHex.toLowerCase()
-    for (const [key, val] of Object.entries(results)) {
+    for (const [key, val] of Object.entries(r)) {
       if (key.toLowerCase() === lowerHandle) return val as bigint
     }
-    const keys = Object.keys(results)
-    if (keys.length > 0) return results[keys[0]] as bigint
+    const keys = Object.keys(r)
+    if (keys.length > 0) return r[keys[0]] as bigint
 
     return null
   } catch (err) {
