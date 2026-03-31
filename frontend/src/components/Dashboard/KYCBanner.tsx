@@ -13,7 +13,7 @@ export default function KYCBanner({ onComplete }: KYCBannerProps) {
         </div>
         <div>
           <div className="kyc-banner-title">Identity verification required</div>
-          <div className="kyc-banner-sub">Complete KYC to unlock plan creation. Takes under 30 seconds.</div>
+          <div className="kyc-banner-sub">Complete on-chain KYC to unlock plan creation.</div>
         </div>
       </div>
       <button className="kyc-complete-btn" onClick={onComplete}>

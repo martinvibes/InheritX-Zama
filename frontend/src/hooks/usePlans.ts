@@ -6,10 +6,11 @@ export interface PlanData {
   id: number
   owner: string
   planType: number
+  name: string
+  description: string
   lastCheckin: bigint
   inactivityDays: bigint
   unlockDate: bigint
-  ethLocked: bigint
   beneficiaryCount: number
   triggered: boolean
   claimed: boolean
@@ -50,14 +51,15 @@ export function usePlan(planId: number | undefined) {
     id: planId!,
     owner: (data as any)[0],
     planType: Number((data as any)[1]),
-    lastCheckin: (data as any)[2],
-    inactivityDays: (data as any)[3],
-    unlockDate: (data as any)[4],
-    ethLocked: (data as any)[5],
-    beneficiaryCount: Number((data as any)[6]),
-    triggered: (data as any)[7],
-    claimed: (data as any)[8],
-    cancelled: (data as any)[9],
+    name: (data as any)[2] || `Plan #${planId}`,
+    description: (data as any)[3] || '',
+    lastCheckin: (data as any)[4],
+    inactivityDays: (data as any)[5],
+    unlockDate: (data as any)[6],
+    beneficiaryCount: Number((data as any)[7]),
+    triggered: (data as any)[8],
+    claimed: (data as any)[9],
+    cancelled: (data as any)[10],
   } : undefined
 
   return { plan, refetch }
@@ -115,6 +117,16 @@ export function useCancelPlan() {
   }
 
   return { cancelPlan, isPending, isConfirming, isSuccess }
+}
+
+export function usePlanBalance(planId: number | undefined) {
+  return useReadContract({
+    address: CONTRACT_ADDRESS,
+    abi: INHERITX_ABI,
+    functionName: 'getPlanBalance',
+    args: planId !== undefined ? [BigInt(planId)] : undefined,
+    query: { enabled: planId !== undefined && !!CONTRACT_ADDRESS },
+  })
 }
 
 export function useTimeUntilTrigger(planId: number | undefined) {

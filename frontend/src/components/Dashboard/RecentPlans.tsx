@@ -1,77 +1,76 @@
+import { useAccount } from 'wagmi'
 import { Landmark, Target, FileText, Plus, ArrowRight, Clock, Users, Lock } from 'lucide-react'
+import { useOwnerPlans, usePlan } from '../../hooks/usePlans'
 
 interface RecentPlansProps {
   hasPlans: boolean
   onCreatePlan: () => void
 }
 
-const plans = [
-  {
-    icon: Landmark,
-    accentColor: 'var(--cyan)',
-    accentBg: 'var(--cyan-dim)',
-    name: 'Family Inheritance',
-    heirs: 2,
-    trigger: '180 days',
-    locked: '1.5 ETH',
-    badge: 'Active',
-    badgeClass: 'pb-active',
-  },
-  {
-    icon: Target,
-    accentColor: 'var(--gold)',
-    accentBg: 'var(--gold-dim)',
-    name: 'College Fund — Emma',
-    heirs: 1,
-    trigger: 'On graduation',
-    locked: '0.8 ETH',
-    badge: 'Pending',
-    badgeClass: 'pb-pend',
-  },
-]
-
 export default function RecentPlans({ hasPlans, onCreatePlan }: RecentPlansProps) {
+  const { address } = useAccount()
+  const { planIds } = useOwnerPlans(address)
+
+  // Show latest 3 plans
+  const recentIds = planIds ? [...planIds].reverse().slice(0, 3) : []
+
   return (
     <div className="panel plans-panel">
       <div className="panel-header">
         <div className="panel-title">Recent Plans</div>
         <div className="view-all" onClick={onCreatePlan}>
-          View All <ArrowRight size={12} strokeWidth={2} />
+          {hasPlans ? 'View All' : 'Create'} <ArrowRight size={12} strokeWidth={2} />
         </div>
       </div>
 
-      {!hasPlans ? (
+      {recentIds.length > 0 ? (
+        <div className="plans-list">
+          {recentIds.map((id) => (
+            <PlanRowLite key={id.toString()} planId={Number(id)} />
+          ))}
+        </div>
+      ) : (
         <div className="empty-state">
           <div className="empty-visual">
             <div className="empty-ring" />
             <FileText size={28} strokeWidth={1.2} style={{ color: 'var(--t3)' }} />
           </div>
           <div className="empty-title">No inheritance plans yet</div>
-          <div className="empty-sub">Create your first plan to secure your digital legacy with FHE encryption.</div>
+          <div className="empty-sub">Create your first plan to secure your digital legacy.</div>
           <button className="btn-empty" onClick={onCreatePlan}>
             <Plus size={14} strokeWidth={2.5} /> Create First Plan
           </button>
         </div>
-      ) : (
-        <div className="plans-list">
-          {plans.map((p) => (
-            <div className="plan-row" key={p.name}>
-              <div className="pr-icon" style={{ background: p.accentBg, color: p.accentColor }}>
-                <p.icon size={16} strokeWidth={1.8} />
-              </div>
-              <div className="pr-info">
-                <div className="pr-name">{p.name}</div>
-                <div className="pr-details">
-                  <span className="pr-detail"><Users size={10} strokeWidth={2} /> {p.heirs}</span>
-                  <span className="pr-detail"><Clock size={10} strokeWidth={2} /> {p.trigger}</span>
-                  <span className="pr-detail"><Lock size={10} strokeWidth={2} /> {p.locked}</span>
-                </div>
-              </div>
-              <div className={`pr-badge ${p.badgeClass}`}>{p.badge}</div>
-            </div>
-          ))}
-        </div>
       )}
+    </div>
+  )
+}
+
+function PlanRowLite({ planId }: { planId: number }) {
+  const { plan } = usePlan(planId)
+  if (!plan) return null
+
+  const isInheritance = plan.planType === 0
+  const statusLabel = plan.cancelled ? 'Cancelled' : plan.triggered ? 'Triggered' : 'Active'
+  const statusClass = plan.cancelled ? 'pb-cancel' : plan.triggered ? 'pb-pend' : 'pb-active'
+
+  return (
+    <div className="plan-row">
+      <div className="pr-icon" style={{
+        background: isInheritance ? 'rgba(0,212,232,0.06)' : 'rgba(240,160,32,0.06)',
+        color: isInheritance ? 'var(--cyan)' : 'var(--gold)',
+      }}>
+        {isInheritance ? <Landmark size={16} strokeWidth={1.8} /> : <Target size={16} strokeWidth={1.8} />}
+      </div>
+      <div className="pr-info">
+        <div className="pr-name">{plan.name}</div>
+        <div className="pr-details">
+          <span className="pr-detail"><Users size={10} strokeWidth={2} /> {plan.beneficiaryCount}</span>
+          <span className="pr-detail"><Clock size={10} strokeWidth={2} /> {plan.inactivityDays.toString()}d</span>
+          <span className="pr-detail"><Lock size={10} strokeWidth={2} /> Encrypted</span>
+        </div>
+      </div>
+      <div className={`pr-badge ${statusClass}`}>{statusLabel}</div>
     </div>
   )
 }

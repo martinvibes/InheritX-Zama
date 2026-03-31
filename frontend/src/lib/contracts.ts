@@ -51,7 +51,7 @@ export const INHERITX_ABI = [
       { indexed: true, name: 'planId', type: 'uint256' },
       { indexed: true, name: 'owner', type: 'address' },
       { indexed: false, name: 'planType', type: 'uint8' },
-      { indexed: false, name: 'ethLocked', type: 'uint256' },
+      { indexed: false, name: 'name', type: 'string' },
     ],
   },
   {
@@ -74,10 +74,11 @@ export const INHERITX_ABI = [
     outputs: [
       { name: 'owner_', type: 'address' },
       { name: 'planType_', type: 'uint8' },
+      { name: 'name_', type: 'string' },
+      { name: 'description_', type: 'string' },
       { name: 'lastCheckin_', type: 'uint256' },
       { name: 'inactivityDays_', type: 'uint256' },
       { name: 'unlockDate_', type: 'uint256' },
-      { name: 'ethLocked_', type: 'uint256' },
       { name: 'beneficiaryCount_', type: 'uint8' },
       { name: 'triggered_', type: 'bool' },
       { name: 'claimed_', type: 'bool' },
@@ -98,6 +99,12 @@ export const INHERITX_ABI = [
   },
   {
     inputs: [{ name: 'planId', type: 'uint256' }],
+    name: 'getPlanBalance',
+    outputs: [{ name: '', type: 'uint256' }],
+    stateMutability: 'view', type: 'function',
+  },
+  {
+    inputs: [{ name: 'planId', type: 'uint256' }],
     name: 'timeUntilTrigger',
     outputs: [{ name: '', type: 'uint256' }],
     stateMutability: 'view', type: 'function',
@@ -105,6 +112,11 @@ export const INHERITX_ABI = [
   // Write functions
   {
     inputs: [], name: 'submitKYC',
+    outputs: [], stateMutability: 'nonpayable', type: 'function',
+  },
+  {
+    inputs: [{ name: 'wallet', type: 'address' }],
+    name: 'verifyKYC',
     outputs: [], stateMutability: 'nonpayable', type: 'function',
   },
   {
@@ -133,6 +145,20 @@ export const INHERITX_ABI = [
       { name: 'unlockDate', type: 'uint256' },
     ],
     name: 'createPlan',
+    outputs: [{ name: 'planId', type: 'uint256' }],
+    stateMutability: 'payable', type: 'function',
+  },
+  {
+    inputs: [
+      { name: 'planType', type: 'uint8' },
+      { name: 'planName', type: 'string' },
+      { name: 'planDescription', type: 'string' },
+      { name: 'heirAddrs', type: 'address[]' },
+      { name: 'shareBps', type: 'uint32[]' },
+      { name: 'inactivityDays', type: 'uint256' },
+      { name: 'unlockDate', type: 'uint256' },
+    ],
+    name: 'createPlanDirect',
     outputs: [{ name: 'planId', type: 'uint256' }],
     stateMutability: 'payable', type: 'function',
   },

@@ -3,6 +3,7 @@ import type { LucideIcon } from 'lucide-react'
 
 interface QuickActionsProps {
   onCreatePlan: () => void
+  onNavigate?: (page: string) => void
   planCount: number
   kycStatus: string
 }
@@ -22,7 +23,11 @@ function StatusDot({ color, label }: { color: string; label: string }) {
   )
 }
 
-export default function QuickActions({ onCreatePlan, planCount, kycStatus }: QuickActionsProps) {
+export default function QuickActions({ onCreatePlan, onNavigate, planCount, kycStatus }: QuickActionsProps) {
+  const handleClick = (action: string) => {
+    if (action === 'create') onCreatePlan()
+    else if (onNavigate) onNavigate(action)
+  }
   return (
     <div className="panel qa-panel">
       <div className="panel-header">
@@ -30,7 +35,7 @@ export default function QuickActions({ onCreatePlan, planCount, kycStatus }: Qui
       </div>
       <div className="qa-list">
         {actions.map((a) => (
-          <div className="qa-item" key={a.name} onClick={a.action === 'create' ? onCreatePlan : undefined}>
+          <div className="qa-item" key={a.name} onClick={() => handleClick(a.action)}>
             <div className={`qa-icon ${a.iconClass}`}>
               <a.icon size={15} strokeWidth={1.8} />
             </div>

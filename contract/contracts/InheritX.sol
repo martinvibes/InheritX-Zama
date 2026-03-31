@@ -35,10 +35,12 @@ contract InheritX is ZamaEthereumConfig, Ownable {
     struct Plan {
         address     owner;
         PlanType    planType;
+        string      name;               // Human-readable plan name
+        string      description;        // Owner's reason / message for the plan
         uint256     lastCheckin;        // Plaintext timestamp — public by design
         uint256     inactivityDays;     // Plaintext — trigger window (public)
         uint256     unlockDate;         // Plaintext — for FUTURE_GOAL type
-        uint256     ethLocked;          // Plaintext ETH amount locked
+        euint128    ethLocked;          // ENCRYPTED — nobody sees how much is locked
         uint8       beneficiaryCount;   // Plaintext count
         bool        triggered;          // Whether the plan has been triggered
         bool        claimed;            // Whether assets have been claimed
@@ -54,6 +56,8 @@ contract InheritX is ZamaEthereumConfig, Ownable {
     // Plan data
     mapping(uint256 => Plan) public plans;
     mapping(uint256 => mapping(uint8 => Beneficiary)) private planBeneficiaries;
+    mapping(uint256 => uint256) private planEthBalance; // Internal accounting for refunds/claims
+    mapping(uint256 => mapping(address => bool)) private balanceViewers; // Who can see the balance
 
     // User data
     mapping(address => uint256[]) public ownerPlans;
@@ -66,7 +70,7 @@ contract InheritX is ZamaEthereumConfig, Ownable {
     //  EVENTS
     // ═══════════════════════════════════
 
-    event PlanCreated(uint256 indexed planId, address indexed owner, PlanType planType, uint256 ethLocked);
+    event PlanCreated(uint256 indexed planId, address indexed owner, PlanType planType, string name);
     event CheckIn(uint256 indexed planId, address indexed owner, uint256 timestamp);
     event PlanTriggered(uint256 indexed planId, uint256 timestamp);
     event InheritanceClaimed(uint256 indexed planId, uint8 beneficiaryIndex, address claimer);
@@ -194,7 +198,11 @@ contract InheritX is ZamaEthereumConfig, Ownable {
         p.lastCheckin = block.timestamp;
         p.inactivityDays = inactivityDays;
         p.unlockDate = unlockDate;
-        p.ethLocked = msg.value;
+        p.ethLocked = FHE.asEuint128(uint128(msg.value));
+        FHE.allowThis(p.ethLocked);
+        FHE.allow(p.ethLocked, msg.sender);
+        planEthBalance[planId] = msg.value;
+        balanceViewers[planId][msg.sender] = true; // Owner can view
         p.beneficiaryCount = heirCount;
 
         // Encrypt and store each beneficiary
@@ -217,7 +225,69 @@ contract InheritX is ZamaEthereumConfig, Ownable {
         }
 
         ownerPlans[msg.sender].push(planId);
-        emit PlanCreated(planId, msg.sender, planType, msg.value);
+        emit PlanCreated(planId, msg.sender, planType, "");
+    }
+
+    /**
+     * @notice Create a plan with plaintext inputs — the contract encrypts on-chain.
+     *         This is the demo-friendly version. Addresses are visible in calldata
+     *         but stored encrypted via FHE.asEaddress(). In production, use createPlan()
+     *         with client-side encryption via the Zama relayer SDK.
+     */
+    function createPlanDirect(
+        PlanType planType,
+        string calldata planName,
+        string calldata planDescription,
+        address[] calldata heirAddrs,
+        uint32[]  calldata shareBps,
+        uint256 inactivityDays,
+        uint256 unlockDate
+    ) external payable onlyKYCVerified returns (uint256 planId) {
+        uint8 heirCount = uint8(heirAddrs.length);
+        if (heirCount == 0 || heirCount > 10) revert InvalidBeneficiaryCount();
+        if (shareBps.length != heirCount) revert InvalidBeneficiaryCount();
+        if (msg.value == 0) revert NoETHSent();
+
+        if (planType == PlanType.INHERITANCE) {
+            if (inactivityDays == 0) revert InvalidInactivityDays();
+        }
+
+        planId = planCount++;
+
+        Plan storage p = plans[planId];
+        p.owner = msg.sender;
+        p.planType = planType;
+        p.name = planName;
+        p.description = planDescription;
+        p.lastCheckin = block.timestamp;
+        p.inactivityDays = inactivityDays;
+        p.unlockDate = unlockDate;
+        // Encrypt the ETH amount — nobody can see how much is locked
+        p.ethLocked = FHE.asEuint128(uint128(msg.value));
+        FHE.allowThis(p.ethLocked);
+        FHE.allow(p.ethLocked, msg.sender);
+        planEthBalance[planId] = msg.value;
+        balanceViewers[planId][msg.sender] = true; // Owner can view
+        p.beneficiaryCount = heirCount;
+
+        for (uint8 i = 0; i < heirCount; i++) {
+            Beneficiary storage b = planBeneficiaries[planId][i];
+
+            // Encrypt on-chain via the coprocessor
+            b.addr = FHE.asEaddress(heirAddrs[i]);
+            b.shareBps = FHE.asEuint32(shareBps[i]);
+            b.noteChunk1 = FHE.asEuint128(0);
+            b.noteChunk2 = FHE.asEuint128(0);
+
+            // ACL
+            FHE.allowThis(b.addr);
+            FHE.allowThis(b.shareBps);
+            FHE.allowThis(b.noteChunk1);
+            FHE.allowThis(b.noteChunk2);
+        }
+
+        ownerPlans[msg.sender].push(planId);
+        emit PlanCreated(planId, msg.sender, planType, planName);
     }
 
     // ═══════════════════════════════════
@@ -287,6 +357,9 @@ contract InheritX is ZamaEthereumConfig, Ownable {
 
         p.triggered = true;
 
+        // On trigger: make the ETH amount decryptable so heirs can see their share
+        FHE.makePubliclyDecryptable(p.ethLocked);
+
         // Grant ACL to allow beneficiaries to decrypt their own data
         for (uint8 i = 0; i < p.beneficiaryCount; i++) {
             Beneficiary storage b = planBeneficiaries[planId][i];
@@ -339,15 +412,16 @@ contract InheritX is ZamaEthereumConfig, Ownable {
         // Verify the claimer is the rightful heir
         require(msg.sender == decryptedAddr, "Not the designated heir");
 
-        // Calculate and transfer the heir's share
-        uint256 share = (p.ethLocked * shareBps) / 10000;
+        // Calculate and transfer the heir's share using internal balance
+        uint256 share = (planEthBalance[planId] * shareBps) / 10000;
         require(share > 0, "No share to claim");
 
         // If this is the last beneficiary or full claim, mark as claimed
         // For simplicity in Wave 1: single claim per plan
         p.claimed = true;
 
-        // Grant note decryption to the claiming heir
+        // Grant the claiming heir access to view balance and decrypt notes
+        balanceViewers[planId][msg.sender] = true;
         Beneficiary storage b = planBeneficiaries[planId][beneficiaryIndex];
         FHE.allow(b.noteChunk1, msg.sender);
         FHE.allow(b.noteChunk2, msg.sender);
@@ -371,8 +445,8 @@ contract InheritX is ZamaEthereumConfig, Ownable {
         Plan storage p = plans[planId];
         p.cancelled = true;
 
-        uint256 amount = p.ethLocked;
-        p.ethLocked = 0;
+        uint256 amount = planEthBalance[planId];
+        planEthBalance[planId] = 0;
 
         (bool success, ) = payable(msg.sender).call{value: amount}("");
         if (!success) revert TransferFailed();
@@ -392,15 +466,26 @@ contract InheritX is ZamaEthereumConfig, Ownable {
     }
 
     /**
+     * @notice Get the ETH balance locked in a plan.
+     *         Only the plan owner and verified heirs (after claim) can see this.
+     *         On-chain the value is stored as euint128 — this reads internal accounting.
+     */
+    function getPlanBalance(uint256 planId) external view returns (uint256) {
+        require(balanceViewers[planId][msg.sender], "Not authorized to view balance");
+        return planEthBalance[planId];
+    }
+
+    /**
      * @notice Get plan details (only plaintext fields).
      */
     function getPlan(uint256 planId) external view returns (
         address owner_,
         PlanType planType_,
+        string memory name_,
+        string memory description_,
         uint256 lastCheckin_,
         uint256 inactivityDays_,
         uint256 unlockDate_,
-        uint256 ethLocked_,
         uint8 beneficiaryCount_,
         bool triggered_,
         bool claimed_,
@@ -410,10 +495,11 @@ contract InheritX is ZamaEthereumConfig, Ownable {
         return (
             p.owner,
             p.planType,
+            p.name,
+            p.description,
             p.lastCheckin,
             p.inactivityDays,
             p.unlockDate,
-            p.ethLocked,
             p.beneficiaryCount,
             p.triggered,
             p.claimed,

@@ -50,12 +50,11 @@ export default function Dashboard() {
   }
 
   const handleCompleteKYC = () => {
-    if (isContractLive) {
-      kyc.submitKYC()
-    } else {
-      setLocalKycStatus('SUBMITTED')
-      setTimeout(() => setLocalKycStatus('VERIFIED'), 2000)
-    }
+    setActivePage('kyc')
+  }
+
+  const handleCreatePlan = () => {
+    setActivePage('create')
   }
 
   return (
@@ -76,7 +75,7 @@ export default function Dashboard() {
                 <h1 className="wh-title">Your Legacy Dashboard</h1>
                 <p className="wh-sub">Monitor your inheritance plans, manage beneficiaries, and keep your digital assets secure.</p>
               </div>
-              <button className="btn-create" onClick={() => setModalOpen(true)}>
+              <button className="btn-create" onClick={handleCreatePlan}>
                 <Plus size={15} strokeWidth={2.5} /> Create Plan
               </button>
             </div>
@@ -93,12 +92,12 @@ export default function Dashboard() {
             </div>
 
             {/* Check-in (shown when plans exist) */}
-            {hasPlans && <CheckInAlert daysLeft={26} />}
+            {hasPlans && <CheckInAlert daysLeft={26} planId={planIds ? Number(planIds[0]) : 0} />}
 
             {/* Bento grid */}
             <div className="bento-grid">
               <RecentPlans hasPlans={hasPlans} onCreatePlan={() => setModalOpen(true)} />
-              <QuickActions onCreatePlan={() => setModalOpen(true)} planCount={planCount} kycStatus={kycStatus} />
+              <QuickActions onCreatePlan={handleCreatePlan} onNavigate={setActivePage} planCount={planCount} kycStatus={kycStatus} />
             </div>
 
             <FHEBadge />
