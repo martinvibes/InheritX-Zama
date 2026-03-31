@@ -549,4 +549,15 @@ const styles = `
 @keyframes spin { to { transform: rotate(360deg); } }
 
 @media(max-width:800px) { .pd-grid { grid-template-columns: repeat(2, 1fr); } }
+@media(max-width:640px) {
+  .page-container-wide { max-width: 100%; }
+  .pd-grid { grid-template-columns: 1fr; }
+  .pd-header { flex-wrap: wrap; gap: 10px; }
+  .pd-status { margin-left: 0; }
+  .pd-life-big { font-size: 40px; }
+  .pd-life-header { flex-wrap: wrap; gap: 10px; }
+  .pd-life-btn { width: 100%; justify-content: center; }
+  .pd-trigger-card { flex-direction: column; gap: 12px; align-items: flex-start; }
+  .pd-trigger-btn { width: 100%; justify-content: center; }
+}
 `

@@ -970,4 +970,19 @@ const styles = `
 }
 .toast svg { color: var(--gold); flex-shrink: 0; }
 @keyframes toast-in { from { opacity: 0; transform: translateY(-8px) scale(0.97); } to { opacity: 1; transform: translateY(0) scale(1); } }
+
+@media(max-width:640px) {
+  .page-container { max-width: 100%; }
+  .cp-type-grid { grid-template-columns: 1fr; }
+  .field-row, .cp-custom-time { flex-direction: column; }
+  .cp-custom-time { display: flex; }
+  .cp-unit-select { width: 100%; }
+  .cp-progress { flex-wrap: wrap; gap: 8px; }
+  .cp-prog-label { display: none; }
+  .cs-fullpage { padding: 16px; }
+  .cs-encrypt-visual { max-width: 100%; }
+  .cs-actions { flex-direction: column; width: 100%; }
+  .cs-actions a, .cs-actions button { width: 100%; justify-content: center; }
+  .cp-review-val { font-size: 12px; }
+}
 `;

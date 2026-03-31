@@ -572,4 +572,13 @@ const styles = `
 
 .spin { animation: spin 1s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
+
+@media(max-width:640px) {
+  .page-container { max-width: 100%; }
+  .cl-plan-stats { grid-template-columns: 1fr; }
+  .cl-plan-header { flex-wrap: wrap; gap: 10px; }
+  .cl-plan-status { margin-left: 0; }
+  .cl-trigger-box { flex-direction: column; align-items: flex-start; gap: 10px; }
+  .cl-trigger-btn { width: 100%; justify-content: center; }
+}
 `
