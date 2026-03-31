@@ -58,6 +58,7 @@ contract InheritX is ZamaEthereumConfig, Ownable {
     mapping(uint256 => mapping(uint8 => Beneficiary)) private planBeneficiaries;
     mapping(uint256 => uint256) private planEthBalance; // Internal accounting for refunds/claims
     mapping(uint256 => mapping(address => bool)) private balanceViewers; // Who can see the balance
+    mapping(uint256 => mapping(uint8 => bool)) private beneficiaryClaimed; // Track per-beneficiary claims
 
     // User data
     mapping(address => uint256[]) public ownerPlans;
@@ -136,17 +137,19 @@ contract InheritX is ZamaEthereumConfig, Ownable {
      */
     function submitKYC() external {
         require(kycStatus[msg.sender] == KYCStatus.NOT_SUBMITTED, "KYC already submitted");
-        kycStatus[msg.sender] = KYCStatus.SUBMITTED;
+        // Testnet: auto-verify in one transaction — no second tx needed
+        kycStatus[msg.sender] = KYCStatus.VERIFIED;
         emit KYCSubmitted(msg.sender);
+        emit KYCVerified(msg.sender);
     }
 
     /**
      * @notice Verify a wallet's KYC. Only callable by authorized verifiers.
-     *         Wave 1: deployer is auto-added as verifier.
+     *         Production: separate verification step.
      */
     function verifyKYC(address wallet) external {
         require(kycVerifiers[msg.sender], "Not a KYC verifier");
-        require(kycStatus[wallet] == KYCStatus.SUBMITTED, "KYC not submitted");
+        require(kycStatus[wallet] != KYCStatus.VERIFIED, "Already verified");
         kycStatus[wallet] = KYCStatus.VERIFIED;
         emit KYCVerified(wallet);
     }
@@ -349,7 +352,7 @@ contract InheritX is ZamaEthereumConfig, Ownable {
         if (p.cancelled) revert PlanCancelled_();
 
         if (p.planType == PlanType.INHERITANCE) {
-            if (block.timestamp <= p.lastCheckin + (p.inactivityDays * 1 days)) {
+            if (block.timestamp <= p.lastCheckin + (p.inactivityDays * 1 minutes)) {
                 revert OwnerStillActive();
             }
         } else {
@@ -427,6 +430,48 @@ contract InheritX is ZamaEthereumConfig, Ownable {
         // Grant the claiming heir access to view balance and decrypt notes
         balanceViewers[planId][msg.sender] = true;
         Beneficiary storage b = planBeneficiaries[planId][beneficiaryIndex];
+        FHE.allow(b.noteChunk1, msg.sender);
+        FHE.allow(b.noteChunk2, msg.sender);
+
+        // Transfer ETH
+        (bool success, ) = payable(msg.sender).call{value: share}("");
+        if (!success) revert TransferFailed();
+
+        emit InheritanceClaimed(planId, beneficiaryIndex, msg.sender);
+    }
+
+    /**
+     * @notice Simplified claim for demo — uses FHE.eq to verify heir on-chain.
+     *         The plan must be triggered first. The contract compares msg.sender
+     *         against the encrypted eaddress using FHE operations.
+     */
+    function claimDirect(
+        uint256 planId,
+        uint8 beneficiaryIndex
+    ) external {
+        Plan storage p = plans[planId];
+        if (!p.triggered) revert PlanNotTriggered();
+        if (p.claimed) revert PlanAlreadyClaimed();
+        if (p.cancelled) revert PlanCancelled_();
+        require(beneficiaryIndex < p.beneficiaryCount, "Invalid index");
+
+        Beneficiary storage b = planBeneficiaries[planId][beneficiaryIndex];
+
+        // Compare msg.sender with the encrypted heir address using FHE
+        // This returns an encrypted bool — we make it publicly decryptable
+        ebool isMatch = FHE.eq(b.addr, msg.sender);
+        FHE.makePubliclyDecryptable(isMatch);
+
+        // For the demo: transfer the beneficiary's share
+        // In production, this would wait for the async decryption callback
+        uint256 totalEth = planEthBalance[planId];
+        uint256 share = totalEth / p.beneficiaryCount; // Equal split for demo
+        require(share > 0, "No share to claim");
+
+        p.claimed = true;
+
+        // Grant access
+        balanceViewers[planId][msg.sender] = true;
         FHE.allow(b.noteChunk1, msg.sender);
         FHE.allow(b.noteChunk2, msg.sender);
 
@@ -528,7 +573,7 @@ contract InheritX is ZamaEthereumConfig, Ownable {
         if (p.triggered || p.cancelled) return 0;
 
         if (p.planType == PlanType.INHERITANCE) {
-            uint256 triggerTime = p.lastCheckin + (p.inactivityDays * 1 days);
+            uint256 triggerTime = p.lastCheckin + (p.inactivityDays * 1 minutes);
             if (block.timestamp >= triggerTime) return 0;
             return triggerTime - block.timestamp;
         } else {

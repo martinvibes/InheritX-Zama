@@ -2,17 +2,24 @@ import { HeartPulse, Check, Loader2 } from 'lucide-react'
 import { useCheckIn, usePlan } from '../../hooks/usePlans'
 
 interface CheckInAlertProps {
-  daysLeft: number
+  daysLeft: number  // actually minutesLeft now
   planId: number
 }
 
-export default function CheckInAlert({ daysLeft, planId }: CheckInAlertProps) {
+function formatTimeLeft(minutes: number) {
+  if (minutes >= 1440) { const d = Math.ceil(minutes / 1440); return { value: d, unit: d === 1 ? 'day' : 'days' } }
+  if (minutes >= 60) { const h = Math.ceil(minutes / 60); return { value: h, unit: h === 1 ? 'hour' : 'hours' } }
+  return { value: minutes, unit: minutes === 1 ? 'minute' : 'minutes' }
+}
+
+export default function CheckInAlert({ daysLeft: minutesLeft, planId }: CheckInAlertProps) {
   const { checkIn, isPending, isConfirming, isSuccess } = useCheckIn()
   const { plan } = usePlan(planId)
 
   const isLoading = isPending || isConfirming
-  const inactivityDays = plan ? Number(plan.inactivityDays) : 180
-  const pct = inactivityDays > 0 ? Math.min(100, Math.round((daysLeft / inactivityDays) * 100)) : 0
+  const inactivityMinutes = plan ? Number(plan.inactivityDays) : 180 // field is actually minutes
+  const pct = inactivityMinutes > 0 ? Math.min(100, Math.round((minutesLeft / inactivityMinutes) * 100)) : 0
+  const { value, unit } = formatTimeLeft(minutesLeft)
 
   return (
     <div className="heartbeat-card">
@@ -20,8 +27,8 @@ export default function CheckInAlert({ daysLeft, planId }: CheckInAlertProps) {
         <div className="hb-header">
           <div className="hb-pulse-dot" />
           <span className="hb-title">Proof of Life</span>
-          <span className={`hb-status ${daysLeft > 7 ? 'hb-safe' : 'hb-warn'}`}>
-            {daysLeft > 7 ? 'Safe' : daysLeft > 0 ? 'Action Needed' : 'Overdue'}
+          <span className={`hb-status ${pct > 50 ? 'hb-safe' : minutesLeft > 0 ? 'hb-warn' : 'hb-warn'}`}>
+            {pct > 50 ? 'Safe' : minutesLeft > 0 ? 'Action Needed' : 'Overdue'}
           </span>
         </div>
         <div className="hb-ecg-wrap">
@@ -32,8 +39,8 @@ export default function CheckInAlert({ daysLeft, planId }: CheckInAlertProps) {
         </div>
         <div className="hb-meta">
           <div className="hb-days">
-            <span className="hb-days-num">{daysLeft}</span>
-            <span className="hb-days-label">days remaining</span>
+            <span className="hb-days-num">{value}</span>
+            <span className="hb-days-label">{unit} remaining</span>
           </div>
           <div className="hb-progress-wrap">
             <div className="hb-progress-bar"><div className="hb-progress-fill" style={{ width: `${pct}%` }} /></div>

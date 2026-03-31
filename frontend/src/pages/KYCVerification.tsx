@@ -1,6 +1,6 @@
-import { useEffect, useState } from 'react'
+import { useEffect } from 'react'
 import { useAccount, useWriteContract, useWaitForTransactionReceipt, useReadContract } from 'wagmi'
-import { ShieldCheck, ArrowRight, Loader2, CheckCircle2, Clock, AlertTriangle } from 'lucide-react'
+import { ShieldCheck, ArrowRight, Loader2, CheckCircle2, AlertTriangle } from 'lucide-react'
 import { CONTRACT_ADDRESS } from '../lib/constants'
 import { INHERITX_ABI } from '../lib/contracts'
 
@@ -19,48 +19,26 @@ export default function KYCVerification() {
   const kycStatus = rawStatus !== undefined ? Number(rawStatus) : 0
   // 0 = NOT_SUBMITTED, 1 = SUBMITTED, 2 = VERIFIED
 
-  // Submit KYC tx
-  const { writeContract: writeSubmit, data: submitHash, isPending: submitPending, error: submitError } = useWriteContract()
-  const { isLoading: submitConfirming, isSuccess: submitSuccess } = useWaitForTransactionReceipt({ hash: submitHash })
+  // Submit KYC tx — auto-verifies in one transaction
+  const { writeContract, data: txHash, isPending, error: txError } = useWriteContract()
+  const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({ hash: txHash })
 
-  // Verify KYC tx (self-verify since deployer = user)
-  const { writeContract: writeVerify, data: verifyHash, isPending: verifyPending } = useWriteContract()
-  const { isLoading: verifyConfirming, isSuccess: verifySuccess } = useWaitForTransactionReceipt({ hash: verifyHash })
-
-  // After submit confirms, auto-verify
+  // Refetch status after tx confirms
   useEffect(() => {
-    if (submitSuccess && address && CONTRACT_ADDRESS) {
-      const timer = setTimeout(() => {
-        writeVerify({
-          address: CONTRACT_ADDRESS,
-          abi: INHERITX_ABI,
-          functionName: 'verifyKYC' as any,
-          args: [address] as any,
-        })
-      }, 1000)
-      return () => clearTimeout(timer)
-    }
-  }, [submitSuccess])
-
-  // After verify confirms, refetch status
-  useEffect(() => {
-    if (verifySuccess) {
-      refetchStatus()
-    }
-  }, [verifySuccess])
+    if (isSuccess) refetchStatus()
+  }, [isSuccess])
 
   const handleSubmit = () => {
     if (!CONTRACT_ADDRESS || !address) return
-    writeSubmit({
+    writeContract({
       address: CONTRACT_ADDRESS,
       abi: INHERITX_ABI,
       functionName: 'submitKYC',
     })
   }
 
-  const isSubmitting = submitPending || submitConfirming
-  const isVerifying = verifyPending || verifyConfirming
-  const isVerified = kycStatus === 2 || verifySuccess
+  const isVerified = kycStatus === 2 || isSuccess
+  const isSubmitting = isPending || isConfirming
 
   return (
     <div className="page-container">
@@ -81,43 +59,33 @@ export default function KYCVerification() {
             <p className="kyc-card-sub">Your identity is verified on-chain. You can now create inheritance plans.</p>
             <div className="kyc-verified-badge"><CheckCircle2 size={12} strokeWidth={2.5} /> KYC Verified</div>
           </>
-        ) : isVerifying ? (
-          <>
-            <div className="kyc-status-icon kyc-si-pending"><Loader2 size={28} strokeWidth={1.5} className="spin" /></div>
-            <h2 className="kyc-card-title">Verifying...</h2>
-            <p className="kyc-card-sub">Confirming verification on-chain. Please approve the transaction in your wallet.</p>
-          </>
-        ) : submitSuccess || kycStatus === 1 ? (
-          <>
-            <div className="kyc-status-icon kyc-si-pending"><Clock size={28} strokeWidth={1.5} /></div>
-            <h2 className="kyc-card-title">Submitted — Verifying</h2>
-            <p className="kyc-card-sub">KYC submitted. Auto-verification in progress...</p>
-            <div className="kyc-loader-bar"><div className="kyc-loader-fill" /></div>
-          </>
         ) : isSubmitting ? (
           <>
             <div className="kyc-status-icon kyc-si-pending"><Loader2 size={28} strokeWidth={1.5} className="spin" /></div>
-            <h2 className="kyc-card-title">Submitting KYC...</h2>
-            <p className="kyc-card-sub">{submitPending ? 'Please approve the transaction in your wallet.' : 'Waiting for on-chain confirmation...'}</p>
+            <h2 className="kyc-card-title">{isPending ? 'Approve in Wallet' : 'Verifying On-Chain...'}</h2>
+            <p className="kyc-card-sub">{isPending ? 'Please confirm the transaction in your wallet.' : 'Waiting for on-chain confirmation. This takes a few seconds.'}</p>
+            <div className="kyc-loader-bar"><div className="kyc-loader-fill" /></div>
           </>
         ) : (
           <>
             <div className="kyc-status-icon kyc-si-warn"><AlertTriangle size={28} strokeWidth={1.5} /></div>
             <h2 className="kyc-card-title">Verification Required</h2>
-            <p className="kyc-card-sub">Complete identity verification to unlock plan creation. Two transactions — submit then verify.</p>
+            <p className="kyc-card-sub">One transaction to verify your identity on-chain. Instant on testnet.</p>
             <div className="kyc-steps">
-              <div className="kyc-step"><span className="kyc-step-num">1</span><span>Submit KYC (sign transaction)</span></div>
-              <div className="kyc-step"><span className="kyc-step-num">2</span><span>Auto-verify (sign second transaction)</span></div>
+              <div className="kyc-step"><span className="kyc-step-num">1</span><span>Sign one transaction</span></div>
+              <div className="kyc-step"><span className="kyc-step-num">2</span><span>Auto-verified on-chain</span></div>
               <div className="kyc-step"><span className="kyc-step-num">3</span><span>Start creating plans</span></div>
             </div>
-            {submitError && (
-              <div className="kyc-error">{submitError.message.includes('already submitted') ? 'KYC already submitted' : 'Transaction failed. Try again.'}</div>
+            {txError && (
+              <div className="kyc-error">
+                {txError.message.includes('already') ? 'KYC already submitted. Try refreshing.' : 'Transaction failed. Try again.'}
+              </div>
             )}
             {!isConnected ? (
               <p className="kyc-connect-hint">Connect your wallet first.</p>
             ) : (
               <button className="kyc-submit-btn" onClick={handleSubmit}>
-                Submit KYC <ArrowRight size={14} strokeWidth={2} />
+                Verify Identity <ArrowRight size={14} strokeWidth={2} />
               </button>
             )}
           </>

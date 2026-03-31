@@ -136,6 +136,14 @@ export const INHERITX_ABI = [
     outputs: [], stateMutability: 'nonpayable', type: 'function',
   },
   {
+    inputs: [
+      { name: 'planId', type: 'uint256' },
+      { name: 'beneficiaryIndex', type: 'uint8' },
+    ],
+    name: 'claimDirect',
+    outputs: [], stateMutability: 'nonpayable', type: 'function',
+  },
+  {
     inputs: [{ name: 'planId', type: 'uint256' }],
     name: 'cancelPlan',
     outputs: [], stateMutability: 'nonpayable', type: 'function',

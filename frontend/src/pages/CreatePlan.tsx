@@ -56,7 +56,19 @@ export default function CreatePlan() {
   const [heirs, setHeirs] = useState<Heir[]>([
     { address: "", name: "", sharePct: 100 },
   ]);
-  const [inactivityDays, setInactivityDays] = useState("180");
+  const [inactivityMinutes, setInactivityMinutes] = useState("10080"); // 7 days default
+  const [customMinutes, setCustomMinutes] = useState("");
+  const [customUnit, setCustomUnit] = useState("minutes");
+
+  const getInactivityMinutes = () => {
+    if (inactivityMinutes === 'custom') {
+      const val = Number(customMinutes) || 0
+      if (customUnit === 'hours') return val * 60
+      if (customUnit === 'days') return val * 1440
+      return val
+    }
+    return Number(inactivityMinutes)
+  }
   const [unlockDate, setUnlockDate] = useState("");
   const [ethAmount, setEthAmount] = useState("");
   const [error, setError] = useState("");
@@ -170,7 +182,7 @@ export default function CreatePlan() {
           encShareHandles,
           encAddrHandles.map(() => proof),
           encShareHandles.map(() => proof),
-          BigInt(planType === 'inheritance' ? inactivityDays : 0),
+          BigInt(planType === 'inheritance' ? getInactivityMinutes() : 0),
           unlockTs,
         ],
         value: parseEther(ethAmount || '0'),
@@ -190,7 +202,7 @@ export default function CreatePlan() {
           planDescription,
           heirs.map(h => h.address as `0x${string}`),
           heirs.map(h => h.sharePct * 100),
-          BigInt(planType === 'inheritance' ? inactivityDays : 0),
+          BigInt(planType === 'inheritance' ? getInactivityMinutes() : 0),
           unlockTs,
         ],
         value: parseEther(ethAmount || '0'),
@@ -495,17 +507,61 @@ export default function CreatePlan() {
                 </label>
                 <select
                   className="cp-input"
-                  value={inactivityDays}
-                  onChange={(e) => setInactivityDays(e.target.value)}
+                  value={inactivityMinutes}
+                  onChange={(e) => {
+                    if (e.target.value === 'custom') {
+                      setInactivityMinutes('custom')
+                    } else {
+                      setInactivityMinutes(e.target.value)
+                    }
+                  }}
                 >
-                  <option value="1">1 day (demo)</option>
-                  <option value="30">30 days</option>
-                  <option value="90">90 days</option>
-                  <option value="180">180 days</option>
-                  <option value="365">1 year</option>
+                  <optgroup label="Demo (fast)">
+                    <option value="2">2 minutes</option>
+                    <option value="5">5 minutes</option>
+                    <option value="10">10 minutes</option>
+                    <option value="30">30 minutes</option>
+                  </optgroup>
+                  <optgroup label="Hours">
+                    <option value="60">1 hour</option>
+                    <option value="360">6 hours</option>
+                    <option value="720">12 hours</option>
+                  </optgroup>
+                  <optgroup label="Days">
+                    <option value="1440">1 day</option>
+                    <option value="10080">7 days</option>
+                    <option value="43200">30 days</option>
+                    <option value="129600">90 days</option>
+                    <option value="259200">180 days</option>
+                    <option value="525600">1 year</option>
+                  </optgroup>
+                  <optgroup label="Custom">
+                    <option value="custom">Custom...</option>
+                  </optgroup>
                 </select>
+                {inactivityMinutes === 'custom' && (
+                  <div className="cp-custom-time">
+                    <input
+                      className="cp-input"
+                      type="number"
+                      min="1"
+                      placeholder="Enter amount"
+                      value={customMinutes}
+                      onChange={(e) => setCustomMinutes(e.target.value)}
+                    />
+                    <select
+                      className="cp-input cp-unit-select"
+                      value={customUnit}
+                      onChange={(e) => setCustomUnit(e.target.value)}
+                    >
+                      <option value="minutes">Minutes</option>
+                      <option value="hours">Hours</option>
+                      <option value="days">Days</option>
+                    </select>
+                  </div>
+                )}
                 <span className="cp-field-hint">
-                  Plan triggers if you don't check in for this long.
+                  Plan triggers if you don't check in for this long. Use "Demo" options for hackathon testing.
                 </span>
               </div>
             ) : (
@@ -594,7 +650,8 @@ export default function CreatePlan() {
               </span>
               <span className="cp-review-val">
                 {planType === "inheritance"
-                  ? `${inactivityDays} days`
+                  ? (() => { const m = getInactivityMinutes(); return m >= 1440 ? `${Math.round(m/1440)} days` : m >= 60 ? `${Math.round(m/60)} hours` : `${m} minutes` })()
+
                   : unlockDate || "—"}
               </span>
             </div>
@@ -722,6 +779,8 @@ const styles = `
 .cp-req { font-size: 9px; font-weight: 600; color: var(--red); letter-spacing: 0.04em; text-transform: uppercase; opacity: 0.8; margin-left: 2px; }
 .cp-opt { font-size: 9px; font-weight: 500; color: var(--t3); letter-spacing: 0.04em; text-transform: uppercase; margin-left: 2px; }
 .cp-field-hint { font-size: 11px; color: var(--t3); }
+.cp-custom-time { display: flex; gap: 8px; margin-top: 8px; }
+.cp-unit-select { width: 120px; flex-shrink: 0; }
 .cp-enc-note { display: flex; align-items: center; gap: 8px; padding: 10px 14px; border-radius: 8px; background: rgba(0,212,232,0.03); border: 1px solid rgba(0,212,232,0.1); font-size: 11px; color: var(--t2); margin-top: 16px; }
 .cp-review { background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.05); border-radius: 12px; overflow: hidden; margin-bottom: 8px; }
 .cp-review-row { display: flex; align-items: center; justify-content: space-between; padding: 12px 16px; border-bottom: 1px solid rgba(255,255,255,0.03); }

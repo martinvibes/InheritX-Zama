@@ -12,6 +12,9 @@ import {
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
+import { useAccount } from 'wagmi'
+import { useAccountModal } from '@rainbow-me/rainbowkit'
+import { useEffect, useRef } from 'react'
 import { LogoMark } from '../shared/Logo'
 
 interface NavItem { icon: LucideIcon; label: string; id: string; route: string }
@@ -38,8 +41,24 @@ interface SidebarProps {
 export default function Sidebar({ active, onNavigate, kycStatus }: SidebarProps) {
   const navigate = useNavigate()
 
+  const { isConnected } = useAccount()
+  const { openAccountModal } = useAccountModal()
+  const wasConnected = useRef(isConnected)
+
+  // Redirect to home only when user actively disconnects (was connected → now isn't)
+  useEffect(() => {
+    if (wasConnected.current && !isConnected) {
+      navigate('/')
+    }
+    wasConnected.current = isConnected
+  }, [isConnected])
+
   const handleNav = (route: string) => {
     navigate(route)
+  }
+
+  const handleDisconnect = () => {
+    openAccountModal?.()
   }
 
   return (
@@ -88,7 +107,7 @@ export default function Sidebar({ active, onNavigate, kycStatus }: SidebarProps)
           </div>
         </div>
 
-        <div className="sb-item sb-disconnect" onClick={() => {}}>
+        <div className="sb-item sb-disconnect" onClick={handleDisconnect}>
           <div className="sb-item-inner">
             <LogOut size={14} strokeWidth={1.8} />
             <span>Disconnect</span>

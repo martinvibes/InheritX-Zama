@@ -70,7 +70,7 @@ function PlanRow({ planId, onClick }: { planId: number; onClick: () => void }) {
         <div className="mp-row-name">{plan.name}</div>
         <div className="mp-row-meta">
           <span><Users size={10} strokeWidth={2} /> {plan.beneficiaryCount}</span>
-          <span><Clock size={10} strokeWidth={2} /> {plan.inactivityDays.toString()}d</span>
+          <span><Clock size={10} strokeWidth={2} /> {Number(plan.inactivityDays) >= 1440 ? `${Math.round(Number(plan.inactivityDays)/1440)}d` : Number(plan.inactivityDays) >= 60 ? `${Math.round(Number(plan.inactivityDays)/60)}h` : `${plan.inactivityDays.toString()}m`}</span>
           <span><Lock size={10} strokeWidth={2} /> Encrypted</span>
         </div>
       </div>

@@ -941,3 +941,15 @@ body::before { display: none; }
 @media(max-width:780px) {
   .sidebar { display: none; }
 }
+
+/* Other plans note */
+.other-plans-note {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 10px 16px; margin-top: -10px; margin-bottom: 18px;
+  border-radius: 8px;
+  background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.04);
+  font-size: 12px; color: var(--t3);
+  cursor: pointer; transition: all 0.15s;
+}
+.other-plans-note:hover { border-color: rgba(0,212,232,0.12); color: var(--t2); }
+.opn-link { color: var(--cyan); font-weight: 500; font-size: 11px; }

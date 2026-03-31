@@ -6,7 +6,7 @@ import {
   CheckCircle2, AlertTriangle, Hexagon, Loader2, HeartPulse
 } from 'lucide-react'
 import { useAccount, useReadContract, useWalletClient } from 'wagmi'
-import { usePlan, useCheckIn, useTimeUntilTrigger } from '../hooks/usePlans'
+import { usePlan, useCheckIn, useTimeUntilTrigger, useTriggerPlan } from '../hooks/usePlans'
 import { CONTRACT_ADDRESS } from '../lib/constants'
 import { INHERITX_ABI } from '../lib/contracts'
 import { decryptValue } from '../lib/fhe'
@@ -20,6 +20,7 @@ export default function PlanDetail() {
   const { plan } = usePlan(planId)
   const { data: timeLeft } = useTimeUntilTrigger(planId)
   const { checkIn, isPending, isConfirming, isSuccess } = useCheckIn()
+  const { triggerPlan, isPending: trigPending, isConfirming: trigConfirming, isSuccess: trigSuccess } = useTriggerPlan()
   const { data: walletClient } = useWalletClient()
 
   const [showBalance, setShowBalance] = useState(false)
@@ -101,12 +102,15 @@ export default function PlanDetail() {
   }
 
   const isInheritance = plan.planType === 0
-  const daysLeft = timeLeft ? Math.ceil(Number(timeLeft) / 86400) : 0
-  const hoursLeft = timeLeft ? Math.ceil(Number(timeLeft) / 3600) : 0
-  const inactivityDays = Number(plan.inactivityDays)
-  const pct = inactivityDays > 0 ? Math.min(100, Math.round((daysLeft / inactivityDays) * 100)) : 0
+  const secondsLeft = timeLeft ? Number(timeLeft) : 0
+  const minutesLeft = Math.ceil(secondsLeft / 60)
+  const hoursLeft = Math.ceil(secondsLeft / 3600)
+  const daysLeft = Math.ceil(secondsLeft / 86400)
+  const inactivityDays = Number(plan.inactivityDays) // actually minutes now
+  const totalSeconds = inactivityDays * 60
+  const pct = totalSeconds > 0 ? Math.min(100, Math.round((secondsLeft / totalSeconds) * 100)) : 0
   const lastCheckinDate = new Date(Number(plan.lastCheckin) * 1000)
-  const triggerDate = new Date((Number(plan.lastCheckin) + inactivityDays * 86400) * 1000)
+  const triggerDate = new Date((Number(plan.lastCheckin) + inactivityDays * 60) * 1000)
   const isCheckingIn = isPending || isConfirming
   const urgency = pct > 50 ? 'safe' : pct > 20 ? 'warning' : 'danger'
   const urgencyColor = urgency === 'safe' ? 'var(--green)' : urgency === 'warning' ? 'var(--gold)' : 'var(--red)'
@@ -169,10 +173,13 @@ export default function PlanDetail() {
           {/* Big countdown */}
           <div className="pd-life-countdown">
             <div className="pd-life-big" style={{ color: urgencyColor }}>
-              {daysLeft > 0 ? daysLeft : '0'}
+              {secondsLeft > 86400 ? daysLeft : secondsLeft > 3600 ? hoursLeft : minutesLeft > 0 ? minutesLeft : '0'}
             </div>
             <div className="pd-life-unit">
-              {daysLeft > 1 ? 'days remaining' : daysLeft === 1 ? 'day remaining' : hoursLeft > 0 ? `${hoursLeft}h remaining` : 'Ready to trigger'}
+              {secondsLeft > 86400 ? `${daysLeft === 1 ? 'day' : 'days'} remaining`
+                : secondsLeft > 3600 ? `${hoursLeft === 1 ? 'hour' : 'hours'} remaining`
+                : minutesLeft > 0 ? `${minutesLeft === 1 ? 'minute' : 'minutes'} remaining`
+                : 'Ready to trigger'}
             </div>
           </div>
 
@@ -205,6 +212,45 @@ export default function PlanDetail() {
                 <span className="pd-life-tl-val">{triggerDate.toLocaleDateString()} · {triggerDate.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })}</span>
               </div>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Trigger card — shows when timer expired but not yet triggered */}
+      {!plan.triggered && !plan.cancelled && daysLeft === 0 && (
+        <div className="pd-trigger-card">
+          <div className="pd-trigger-icon"><AlertTriangle size={20} strokeWidth={1.8} /></div>
+          <div className="pd-trigger-info">
+            <div className="pd-trigger-title">Inactivity Window Expired</div>
+            <div className="pd-trigger-sub">This plan can now be triggered. Once triggered, heirs can claim their share.</div>
+          </div>
+          <button className="pd-trigger-btn" onClick={() => triggerPlan(planId)} disabled={trigPending || trigConfirming}>
+            {trigPending ? <><Loader2 size={13} className="spin" /> Confirm...</> :
+             trigConfirming ? <><Loader2 size={13} className="spin" /> Triggering...</> :
+             trigSuccess ? <><CheckCircle2 size={13} /> Triggered</> :
+             <><AlertTriangle size={13} /> Trigger Plan</>}
+          </button>
+        </div>
+      )}
+
+      {/* Triggered banner */}
+      {plan.triggered && !plan.claimed && (
+        <div className="pd-triggered-banner">
+          <div className="pd-triggered-icon"><AlertTriangle size={18} strokeWidth={1.8} /></div>
+          <div>
+            <div className="pd-triggered-title">Plan Triggered</div>
+            <div className="pd-triggered-sub">Heirs can now claim their share. Encrypted data is being decrypted by the KMS network.</div>
+          </div>
+        </div>
+      )}
+
+      {/* Claimed banner */}
+      {plan.claimed && (
+        <div className="pd-claimed-banner">
+          <div className="pd-claimed-icon"><CheckCircle2 size={18} strokeWidth={1.8} /></div>
+          <div>
+            <div className="pd-claimed-title">Inheritance Claimed</div>
+            <div className="pd-claimed-sub">Assets have been transferred to the designated heirs.</div>
           </div>
         </div>
       )}
@@ -459,6 +505,45 @@ const styles = `
   transition: opacity 0.15s;
 }
 .pd-etherscan a:hover { opacity: 0.8; }
+
+/* Trigger card */
+.pd-trigger-card {
+  display: flex; align-items: center; gap: 14px;
+  padding: 16px 20px; margin-bottom: 16px; border-radius: 12px;
+  background: rgba(224,80,80,0.04); border: 1px solid rgba(224,80,80,0.15);
+}
+.pd-trigger-icon { color: var(--red); flex-shrink: 0; }
+.pd-trigger-info { flex: 1; }
+.pd-trigger-title { font-size: 14px; font-weight: 600; color: var(--t1); margin-bottom: 2px; }
+.pd-trigger-sub { font-size: 12px; color: var(--t3); }
+.pd-trigger-btn {
+  display: flex; align-items: center; gap: 6px;
+  padding: 9px 18px; background: var(--red); border: none; border-radius: 8px;
+  color: #fff; font-family: 'Space Grotesk', sans-serif; font-size: 12px; font-weight: 700;
+  cursor: pointer; transition: all 0.2s; white-space: nowrap;
+}
+.pd-trigger-btn:hover { box-shadow: 0 4px 16px rgba(224,80,80,0.3); }
+.pd-trigger-btn:disabled { opacity: 0.6; cursor: not-allowed; }
+
+/* Triggered banner */
+.pd-triggered-banner {
+  display: flex; align-items: flex-start; gap: 12px;
+  padding: 16px 20px; margin-bottom: 16px; border-radius: 12px;
+  background: rgba(240,160,32,0.04); border: 1px solid rgba(240,160,32,0.15);
+}
+.pd-triggered-icon { color: var(--gold); flex-shrink: 0; margin-top: 1px; }
+.pd-triggered-title { font-size: 14px; font-weight: 600; color: var(--t1); margin-bottom: 2px; }
+.pd-triggered-sub { font-size: 12px; color: var(--t3); line-height: 1.5; }
+
+/* Claimed banner */
+.pd-claimed-banner {
+  display: flex; align-items: flex-start; gap: 12px;
+  padding: 16px 20px; margin-bottom: 16px; border-radius: 12px;
+  background: rgba(0,201,138,0.04); border: 1px solid rgba(0,201,138,0.15);
+}
+.pd-claimed-icon { color: var(--green); flex-shrink: 0; margin-top: 1px; }
+.pd-claimed-title { font-size: 14px; font-weight: 600; color: var(--t1); margin-bottom: 2px; }
+.pd-claimed-sub { font-size: 12px; color: var(--t3); line-height: 1.5; }
 
 .spin { animation: spin 1s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
