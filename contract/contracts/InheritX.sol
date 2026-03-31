@@ -58,6 +58,7 @@ contract InheritX is ZamaEthereumConfig, Ownable {
     mapping(uint256 => mapping(uint8 => Beneficiary)) private planBeneficiaries;
     mapping(uint256 => uint256) private planEthBalance; // Internal accounting for refunds/claims
     mapping(uint256 => mapping(address => bool)) private balanceViewers; // Who can see the balance
+    mapping(uint256 => mapping(uint8 => bytes32)) private heirHashes; // keccak256(heir address) for claim verification
     mapping(uint256 => mapping(uint8 => bool)) private beneficiaryClaimed; // Track per-beneficiary claims
 
     // User data
@@ -181,6 +182,7 @@ contract InheritX is ZamaEthereumConfig, Ownable {
         externalEuint32[]  calldata encShares,
         bytes[]  calldata inputProofsAddrs,
         bytes[]  calldata inputProofsShares,
+        bytes32[] calldata heirAddressHashes,
         uint256 inactivityDays,
         uint256 unlockDate
     ) external payable onlyKYCVerified returns (uint256 planId) {
@@ -231,8 +233,15 @@ contract InheritX is ZamaEthereumConfig, Ownable {
             FHE.allowThis(b.noteChunk2);
         }
 
+        // Store heir hashes for claim verification
+        for (uint8 i = 0; i < heirCount; i++) {
+            if (i < heirAddressHashes.length) {
+                heirHashes[planId][i] = heirAddressHashes[i];
+            }
+        }
+
         ownerPlans[msg.sender].push(planId);
-        emit PlanCreated(planId, msg.sender, planType, "");
+        emit PlanCreated(planId, msg.sender, planType, planName);
     }
 
     /**
@@ -283,6 +292,8 @@ contract InheritX is ZamaEthereumConfig, Ownable {
             // Encrypt on-chain via the coprocessor
             b.addr = FHE.asEaddress(heirAddrs[i]);
             b.shareBps = FHE.asEuint32(shareBps[i]);
+            // Store hash for claim verification — hash is one-way, doesn't reveal the address
+            heirHashes[planId][i] = keccak256(abi.encodePacked(heirAddrs[i]));
             b.noteChunk1 = FHE.asEuint128(0);
             b.noteChunk2 = FHE.asEuint128(0);
 
@@ -441,45 +452,77 @@ contract InheritX is ZamaEthereumConfig, Ownable {
     }
 
     /**
-     * @notice Simplified claim for demo — uses FHE.eq to verify heir on-chain.
-     *         The plan must be triggered first. The contract compares msg.sender
-     *         against the encrypted eaddress using FHE operations.
+     * @notice Claim inheritance — verifies heir via address hash.
+     *         The contract checks keccak256(msg.sender) against stored hashes
+     *         to verify the claimer is a real designated heir.
+     *         Loops through all beneficiaries — heir doesn't need to know their index.
      */
-    function claimDirect(
-        uint256 planId,
-        uint8 beneficiaryIndex
-    ) external {
+    function claimDirect(uint256 planId) external {
         Plan storage p = plans[planId];
         if (!p.triggered) revert PlanNotTriggered();
-        if (p.claimed) revert PlanAlreadyClaimed();
         if (p.cancelled) revert PlanCancelled_();
-        require(beneficiaryIndex < p.beneficiaryCount, "Invalid index");
 
-        Beneficiary storage b = planBeneficiaries[planId][beneficiaryIndex];
+        // Find which beneficiary matches msg.sender
+        bytes32 senderHash = keccak256(abi.encodePacked(msg.sender));
+        bool found = false;
+        uint8 matchIndex = 0;
 
-        // Compare msg.sender with the encrypted heir address using FHE
-        // This returns an encrypted bool — we make it publicly decryptable
-        ebool isMatch = FHE.eq(b.addr, msg.sender);
-        FHE.makePubliclyDecryptable(isMatch);
+        for (uint8 i = 0; i < p.beneficiaryCount; i++) {
+            if (heirHashes[planId][i] == senderHash && !beneficiaryClaimed[planId][i]) {
+                found = true;
+                matchIndex = i;
+                break;
+            }
+        }
 
-        // For the demo: transfer the beneficiary's share
-        // In production, this would wait for the async decryption callback
+        require(found, "Not a designated heir or already claimed");
+
+        // Mark this beneficiary as claimed
+        beneficiaryClaimed[planId][matchIndex] = true;
+
+        // Calculate share (equal split)
         uint256 totalEth = planEthBalance[planId];
-        uint256 share = totalEth / p.beneficiaryCount; // Equal split for demo
-        require(share > 0, "No share to claim");
+        uint256 share = totalEth / p.beneficiaryCount;
+        require(share > 0, "No share");
 
-        p.claimed = true;
+        // Check if all beneficiaries have claimed
+        bool allClaimed = true;
+        for (uint8 i = 0; i < p.beneficiaryCount; i++) {
+            if (!beneficiaryClaimed[planId][i]) { allClaimed = false; break; }
+        }
+        if (allClaimed) p.claimed = true;
 
         // Grant access
         balanceViewers[planId][msg.sender] = true;
+        Beneficiary storage b = planBeneficiaries[planId][matchIndex];
         FHE.allow(b.noteChunk1, msg.sender);
         FHE.allow(b.noteChunk2, msg.sender);
 
-        // Transfer ETH
+        // Transfer ETH to the verified heir
         (bool success, ) = payable(msg.sender).call{value: share}("");
         if (!success) revert TransferFailed();
 
-        emit InheritanceClaimed(planId, beneficiaryIndex, msg.sender);
+        emit InheritanceClaimed(planId, matchIndex, msg.sender);
+    }
+
+    /**
+     * @notice Check if a wallet is a designated heir for a plan.
+     *         Returns true if the wallet hash matches any beneficiary, false otherwise.
+     */
+    /**
+     * @notice Check heir status for a wallet.
+     *         Returns: 0 = not a heir, 1 = heir (can claim), 2 = heir (already claimed)
+     */
+    function getHeirStatus(uint256 planId, address wallet) external view returns (uint8) {
+        Plan storage p = plans[planId];
+        bytes32 walletHash = keccak256(abi.encodePacked(wallet));
+        for (uint8 i = 0; i < p.beneficiaryCount; i++) {
+            if (heirHashes[planId][i] == walletHash) {
+                if (beneficiaryClaimed[planId][i]) return 2; // already claimed
+                return 1; // can claim
+            }
+        }
+        return 0; // not a heir
     }
 
     // ═══════════════════════════════════

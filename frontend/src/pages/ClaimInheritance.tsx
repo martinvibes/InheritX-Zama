@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { useAccount, useWriteContract, useWaitForTransactionReceipt, useWalletClient } from 'wagmi'
+import { useAccount, useWriteContract, useWaitForTransactionReceipt, useWalletClient, useReadContract } from 'wagmi'
 import {
   Gift, Search, Lock, Loader2, CheckCircle2, ShieldCheck,
   Landmark, Target, Users, Clock, Hexagon, AlertTriangle, ArrowRight
@@ -13,7 +13,7 @@ export default function ClaimInheritance() {
   const { data: walletClient } = useWalletClient()
   const [planIdInput, setPlanIdInput] = useState('')
   const [searchedPlanId, setSearchedPlanId] = useState<number | null>(null)
-  const [claimStep, setClaimStep] = useState<'search' | 'found' | 'claiming' | 'claimed'>('search')
+  const [claimStep, setClaimStep] = useState<'search' | 'found' | 'claiming' | 'claimed' | 'already_claimed'>('search')
   const [claimError, setClaimError] = useState('')
 
   const { plan } = usePlan(searchedPlanId ?? undefined)
@@ -25,6 +25,21 @@ export default function ClaimInheritance() {
   const minutesLeft = Math.ceil(secondsLeft / 60)
   const canTrigger = plan && !plan.triggered && !plan.cancelled && daysLeft === 0
   const isTriggered = plan?.triggered || trigSuccess
+  const planExists = plan && plan.owner !== '0x0000000000000000000000000000000000000000' && plan.beneficiaryCount > 0
+
+  // Check heir status via contract view function: 0=not heir, 1=can claim, 2=already claimed
+  const { data: rawHeirStatus } = useReadContract({
+    address: CONTRACT_ADDRESS,
+    abi: INHERITX_ABI,
+    functionName: 'getHeirStatus',
+    args: searchedPlanId !== null && address ? [BigInt(searchedPlanId), address] : undefined,
+    query: { enabled: !!planExists && !!isTriggered && !!address && !!CONTRACT_ADDRESS && searchedPlanId !== null },
+  })
+
+  const heirStatus = rawHeirStatus === undefined ? null
+    : Number(rawHeirStatus) === 2 ? 'already_claimed'
+    : Number(rawHeirStatus) === 1 ? 'is_heir'
+    : 'not_heir'
 
   const handleSearch = () => {
     if (!planIdInput) return
@@ -63,13 +78,12 @@ export default function ClaimInheritance() {
       address: CONTRACT_ADDRESS,
       abi: INHERITX_ABI,
       functionName: 'claimDirect' as any,
-      args: [BigInt(searchedPlanId!), 0] as any,
+      args: [BigInt(searchedPlanId!)] as any,
       gas: BigInt(5_000_000),
     })
   }
 
   const isInheritance = plan?.planType === 0
-  const planExists = plan && plan.owner !== '0x0000000000000000000000000000000000000000' && plan.beneficiaryCount > 0
 
   return (
     <div className="page-container">
@@ -223,47 +237,45 @@ export default function ClaimInheritance() {
             </div>
 
             {/* Step 3: Claim */}
-            {isTriggered && !plan.claimed && !plan.cancelled && (
+            {isTriggered && !plan.cancelled && (
               <>
                 <div className="cl-divider" />
-                <div className="cl-step">
-                  <div className="cl-step-header">
-                    <div className="cl-step-num">3</div>
-                    <span className="cl-step-label">Verify & Claim</span>
-                  </div>
 
-                  <div className="cl-verify-box">
-                    <div className="cl-verify-row">
-                      <ShieldCheck size={13} strokeWidth={2} style={{ color: 'var(--cyan)' }} />
-                      <span>fhEVM will decrypt your <code>eaddress</code> to verify you're a designated heir.</span>
+                {!isConnected ? (
+                  <div className="cl-step">
+                    <div className="cl-step-header">
+                      <div className="cl-step-num">3</div>
+                      <span className="cl-step-label">Connect to Verify</span>
                     </div>
-                    <div className="cl-verify-row">
-                      <Lock size={13} strokeWidth={2} style={{ color: 'var(--green)' }} />
-                      <span>KMS threshold network confirms identity — no single party involved.</span>
-                    </div>
-                    <div className="cl-verify-row">
-                      <Gift size={13} strokeWidth={2} style={{ color: 'var(--cyan)' }} />
-                      <span>Your share will be sent directly to your connected wallet.</span>
+                    <p className="cl-connect-hint">Connect the wallet that was designated as heir to check eligibility.</p>
+                  </div>
+                ) : heirStatus === null ? (
+                  <div className="cl-step">
+                    <div className="cl-checking">
+                      <Loader2 size={14} className="spin" style={{ color: 'var(--cyan)' }} />
+                      <span>Checking if your wallet is a designated beneficiary...</span>
                     </div>
                   </div>
-
-                  {claimError && (
-                    <div className="cl-error">{claimError}</div>
-                  )}
-
-                  <div className="cl-heirs-info">
-                    <Users size={13} strokeWidth={2} />
-                    <span>{plan.beneficiaryCount} {plan.beneficiaryCount === 1 ? 'beneficiary' : 'beneficiaries'} designated in this plan. The contract will verify your wallet against all encrypted addresses automatically.</span>
+                ) : heirStatus === 'already_claimed' ? (
+                  <div className="cl-already-claimed">
+                    <div className="cl-ac-icon"><CheckCircle2 size={22} strokeWidth={1.5} /></div>
+                    <h3 className="cl-ac-title">Already Claimed</h3>
+                    <p className="cl-ac-sub">
+                      All shares from this plan have been claimed. If you're a beneficiary, the ETH was sent to your wallet.
+                    </p>
+                    <p className="cl-ac-hint">Check your wallet balance to confirm.</p>
                   </div>
-
-                  {!isConnected ? (
-                    <p className="cl-connect-hint">Connect the wallet that was designated as heir to claim.</p>
-                  ) : claimStep === 'claiming' ? (
-                    <div className="cl-claiming">
-                      <Loader2 size={16} className="spin" style={{ color: 'var(--cyan)' }} />
-                      <span>{claimPending ? 'Approve in wallet...' : 'Verifying identity & transferring ETH...'}</span>
-                    </div>
-                  ) : claimStep === 'claimed' ? (
+                ) : heirStatus === 'not_heir' ? (
+                  <div className="cl-not-heir">
+                    <div className="cl-nh-icon"><Lock size={22} strokeWidth={1.5} /></div>
+                    <h3 className="cl-nh-title">Not a Designated Beneficiary</h3>
+                    <p className="cl-nh-sub">
+                      The connected wallet <code>{address?.slice(0, 6)}...{address?.slice(-4)}</code> is not among the beneficiaries for this plan.
+                    </p>
+                    <p className="cl-nh-hint">Make sure you're connected with the wallet that was designated by the plan owner. Try switching wallets.</p>
+                  </div>
+                ) : claimStep === 'claimed' ? (
+                  <div className="cl-step">
                     <div className="cl-claimed-success">
                       <CheckCircle2 size={24} strokeWidth={1.5} style={{ color: 'var(--green)' }} />
                       <div className="cl-claimed-title">Inheritance Claimed!</div>
@@ -274,12 +286,43 @@ export default function ClaimInheritance() {
                         </a>
                       )}
                     </div>
-                  ) : (
-                    <button className="cl-claim-btn" onClick={handleClaim}>
-                      <Gift size={14} strokeWidth={2} /> Claim My Inheritance
-                    </button>
-                  )}
-                </div>
+                  </div>
+                ) : (
+                  <div className="cl-step">
+                    <div className="cl-step-header">
+                      <div className="cl-step-num cl-step-done"><CheckCircle2 size={12} strokeWidth={2.5} /></div>
+                      <span className="cl-step-label">You're a Designated Beneficiary</span>
+                    </div>
+
+                    <div className="cl-verify-box">
+                      <div className="cl-verify-row">
+                        <ShieldCheck size={13} strokeWidth={2} style={{ color: 'var(--green)' }} />
+                        <span>Your wallet has been verified as a designated heir for this plan.</span>
+                      </div>
+                      <div className="cl-verify-row">
+                        <Lock size={13} strokeWidth={2} style={{ color: 'var(--cyan)' }} />
+                        <span>Heir addresses are encrypted on-chain — only verified wallets can claim.</span>
+                      </div>
+                      <div className="cl-verify-row">
+                        <Gift size={13} strokeWidth={2} style={{ color: 'var(--cyan)' }} />
+                        <span>Your share will be sent directly to your connected wallet.</span>
+                      </div>
+                    </div>
+
+                    {claimError && <div className="cl-error">{claimError}</div>}
+
+                    {claimStep === 'claiming' ? (
+                      <div className="cl-claiming">
+                        <Loader2 size={16} className="spin" style={{ color: 'var(--cyan)' }} />
+                        <span>{claimPending ? 'Approve in wallet...' : 'Verifying identity & transferring ETH...'}</span>
+                      </div>
+                    ) : (
+                      <button className="cl-claim-btn" onClick={handleClaim}>
+                        <Gift size={14} strokeWidth={2} /> Claim My Inheritance
+                      </button>
+                    )}
+                  </div>
+                )}
               </>
             )}
           </>
@@ -477,6 +520,55 @@ const styles = `
   cursor: pointer; transition: all 0.15s; font-family: 'Inter', sans-serif;
 }
 .cl-nf-retry:hover { border-color: rgba(0,212,232,0.2); color: var(--cyan); }
+
+/* Already claimed */
+.cl-already-claimed {
+  display: flex; flex-direction: column; align-items: center;
+  text-align: center; padding: 20px 16px;
+}
+.cl-ac-icon {
+  width: 52px; height: 52px; border-radius: 50%;
+  background: rgba(0,201,138,0.06); border: 1px solid rgba(0,201,138,0.15);
+  display: flex; align-items: center; justify-content: center;
+  color: var(--green); margin-bottom: 14px;
+}
+.cl-ac-title {
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 16px; font-weight: 600; color: var(--t1); margin-bottom: 6px;
+}
+.cl-ac-sub {
+  font-size: 13px; color: var(--t2); max-width: 360px; line-height: 1.6; margin-bottom: 8px;
+}
+.cl-ac-hint {
+  font-size: 12px; color: var(--green); max-width: 340px; line-height: 1.5;
+}
+
+/* Not a heir */
+.cl-not-heir {
+  display: flex; flex-direction: column; align-items: center;
+  text-align: center; padding: 20px 16px;
+}
+.cl-nh-icon {
+  width: 52px; height: 52px; border-radius: 50%;
+  background: rgba(224,80,80,0.06); border: 1px solid rgba(224,80,80,0.15);
+  display: flex; align-items: center; justify-content: center;
+  color: var(--red); margin-bottom: 14px;
+}
+.cl-nh-title {
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 16px; font-weight: 600; color: var(--t1); margin-bottom: 6px;
+}
+.cl-nh-sub {
+  font-size: 13px; color: var(--t2); max-width: 360px; line-height: 1.6; margin-bottom: 8px;
+}
+.cl-nh-hint {
+  font-size: 12px; color: var(--t3); max-width: 340px; line-height: 1.5;
+}
+
+.cl-checking {
+  display: flex; align-items: center; gap: 10px; justify-content: center;
+  padding: 20px; font-size: 13px; color: var(--t2);
+}
 
 .spin { animation: spin 1s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }

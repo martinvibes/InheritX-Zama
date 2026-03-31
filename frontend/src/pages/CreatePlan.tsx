@@ -148,6 +148,10 @@ export default function CreatePlan() {
       ? BigInt(Math.floor(new Date(unlockDate).getTime() / 1000))
       : BigInt(0)
 
+    // Compute keccak256 hashes of heir addresses for claim verification
+    const { keccak256, encodePacked } = await import('viem')
+    const heirHashes = heirs.map(h => keccak256(encodePacked(['address'], [h.address as `0x${string}`])))
+
     try {
       // Try client-side encryption first (proper FHE flow)
       const { getFhevmInstance } = await import('../lib/fhe')
@@ -182,6 +186,7 @@ export default function CreatePlan() {
           encShareHandles,
           encAddrHandles.map(() => proof),
           encShareHandles.map(() => proof),
+          heirHashes,
           BigInt(planType === 'inheritance' ? getInactivityMinutes() : 0),
           unlockTs,
         ],

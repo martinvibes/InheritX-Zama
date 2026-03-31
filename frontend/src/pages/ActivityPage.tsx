@@ -1,6 +1,6 @@
 import { useEffect, useState, useRef } from 'react'
 import { useAccount, usePublicClient } from 'wagmi'
-import { HeartPulse, FileText, ShieldCheck, AlertTriangle, Clock, Hexagon } from 'lucide-react'
+import { HeartPulse, FileText, ShieldCheck, AlertTriangle, Clock, Hexagon, Gift } from 'lucide-react'
 import { CONTRACT_ADDRESS } from '../lib/constants'
 
 interface ActivityItem {
@@ -98,6 +98,19 @@ export default function ActivityPage() {
               icon: ShieldCheck, color: 'var(--green)', bg: 'rgba(0,201,138,0.06)',
               label: 'KYC Verified',
               detail: 'Identity verification complete',
+            }),
+          },
+          {
+            event: { type: 'event' as const, name: 'InheritanceClaimed', inputs: [
+              { indexed: true, name: 'planId', type: 'uint256' },
+              { indexed: false, name: 'beneficiaryIndex', type: 'uint8' },
+              { indexed: false, name: 'claimer', type: 'address' },
+            ]},
+            args: {},
+            transform: (log: any) => ({
+              icon: Gift, color: 'var(--green)', bg: 'rgba(0,201,138,0.06)',
+              label: 'Inheritance Claimed',
+              detail: `Plan #${(log.args as any)?.planId?.toString() || '?'} — assets transferred to heir`,
             }),
           },
         ]

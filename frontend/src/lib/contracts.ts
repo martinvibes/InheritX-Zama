@@ -98,6 +98,15 @@ export const INHERITX_ABI = [
     stateMutability: 'view', type: 'function',
   },
   {
+    inputs: [
+      { name: 'planId', type: 'uint256' },
+      { name: 'wallet', type: 'address' },
+    ],
+    name: 'getHeirStatus',
+    outputs: [{ name: '', type: 'uint8' }],
+    stateMutability: 'view', type: 'function',
+  },
+  {
     inputs: [{ name: 'planId', type: 'uint256' }],
     name: 'getEthLockedHandle',
     outputs: [{ name: '', type: 'bytes32' }],
@@ -138,7 +147,6 @@ export const INHERITX_ABI = [
   {
     inputs: [
       { name: 'planId', type: 'uint256' },
-      { name: 'beneficiaryIndex', type: 'uint8' },
     ],
     name: 'claimDirect',
     outputs: [], stateMutability: 'nonpayable', type: 'function',
@@ -157,6 +165,7 @@ export const INHERITX_ABI = [
       { name: 'encShares', type: 'bytes32[]' },
       { name: 'inputProofsAddrs', type: 'bytes[]' },
       { name: 'inputProofsShares', type: 'bytes[]' },
+      { name: 'heirAddressHashes', type: 'bytes32[]' },
       { name: 'inactivityDays', type: 'uint256' },
       { name: 'unlockDate', type: 'uint256' },
     ],
